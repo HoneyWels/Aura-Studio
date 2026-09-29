@@ -180,6 +180,20 @@
       max-width: 540px; margin-bottom: 64px;
     }
 
+    /* ── SHOWCASE ── */
+    .showcase-item h3 { color: #fff; font-size: 18px; margin-bottom: 16px; font-weight: 600; }
+    .yt-wrapper {
+      position: relative; padding-bottom: 56.25%;
+      height: 0; overflow: hidden; max-width: 100%;
+      border-radius: 12px; border: 1px solid var(--border);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.4);
+      background: #000;
+    }
+    .yt-wrapper iframe {
+      position: absolute; top: 0; left: 0;
+      width: 100%; height: 100%;
+    }
+
     /* ── FEATURE CARDS ── */
     .cards {
       display: grid;
@@ -314,6 +328,7 @@
 <nav>
   <a class="nav-logo" href="#">AURA<span>.</span></a>
   <ul class="nav-links">
+    <li><a href="#showcase">Showcase</a></li>
     <li><a href="#features">Features</a></li>
     <li><a href="#compare">Compare</a></li>
     <li><a href="#faq">FAQ</a></li>
@@ -359,6 +374,45 @@
 <div class="ticker-wrap">
   <div class="ticker" id="ticker"></div>
 </div>
+
+<!-- SHOWCASE -->
+<section id="showcase">
+  <div class="section-label">Showcase</div>
+  <h2>See it in action.</h2>
+  <p class="section-sub">Aura Studio handles everything from applying live shaders to extracting system-wide accent colors in real time.</p>
+
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 32px; margin-top: 40px;">
+    
+    <div class="showcase-item">
+      <h3>1. One-Click Wallpapers</h3>
+      <div class="yt-wrapper">
+        <iframe src="https://www.youtube.com/embed/VIDEO_ID_1?autoplay=0&showinfo=0&controls=1&rel=0" frameborder="0" allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <div class="showcase-item">
+      <h3>2. Live Visual Filters</h3>
+      <div class="yt-wrapper">
+        <iframe src="https://www.youtube.com/embed/VIDEO_ID_2?autoplay=0&showinfo=0&controls=1&rel=0" frameborder="0" allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <div class="showcase-item">
+      <h3>3. Built-in Catalog</h3>
+      <div class="yt-wrapper">
+        <iframe src="https://www.youtube.com/embed/VIDEO_ID_3?autoplay=0&showinfo=0&controls=1&rel=0" frameborder="0" allowfullscreen></iframe>
+      </div>
+    </div>
+
+    <div class="showcase-item">
+      <h3>4. Dynamic Auto-Theming</h3>
+      <div class="yt-wrapper">
+        <iframe src="https://www.youtube.com/embed/VIDEO_ID_4?autoplay=0&showinfo=0&controls=1&rel=0" frameborder="0" allowfullscreen></iframe>
+      </div>
+    </div>
+
+  </div>
+</section>
 
 <!-- FEATURES -->
 <section id="features">
