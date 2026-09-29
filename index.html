@@ -609,14 +609,20 @@
     <div class="dl-card">
       <h3>📦 Dependencies</h3>
       <p>Required packages for other distributions. Install them before copying the files manually.</p>
+      <div class="code-block" style="margin-bottom: 12px;">
+        <span class="c"># Arch / Manjaro</span><br />
+        <span class="k">sudo</span> pacman -S mpv xdotool xorg-xrandr yt-dlp python-pyqt6<br />
+        <span class="k">yay</span> -S xwinwrap-git python-colorthief
+      </div>
+      <div class="code-block" style="margin-bottom: 12px;">
+        <span class="c"># Debian / Ubuntu</span><br />
+        <span class="k">sudo</span> apt install mpv xdotool x11-xserver-utils yt-dlp python3-pyqt6 python3-pip<br />
+        <span class="k">pip3</span> install colorthief --break-system-packages
+      </div>
       <div class="code-block">
-        <span class="c"># Arch Linux</span><br />
-        <span class="k">sudo</span> pacman -S mpv xdotool<br />
-        &nbsp;&nbsp;xorg-xrandr yt-dlp python<br />
-        &nbsp;&nbsp;python-pyqt6<br />
-        <span class="k">pip</span> install colorthief<br />
-        <span class="c"># AUR</span><br />
-        <span class="k">yay</span> -S xwinwrap-git
+        <span class="c"># Fedora</span><br />
+        <span class="k">sudo</span> dnf install mpv xdotool xrandr yt-dlp python3-qt6<br />
+        <span class="k">pip3</span> install colorthief
       </div>
     </div>
     <div class="dl-card">
