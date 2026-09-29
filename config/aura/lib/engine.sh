@@ -112,8 +112,10 @@ aura_engine_start() {
         [[ -n $only && $mon != "$only" ]] && continue
         local target
         target=$(aura_engine_resolve "$mon" "$file")
-        [[ -z $target ]] && target=$(aura_default_file)
-        if [[ -z $target || ! -f $target ]]; then
+        if [[ -z "$target" || ! -f "$target" ]]; then
+            target=$(aura_default_file)
+        fi
+        if [[ -z "$target" || ! -f "$target" ]]; then
             aura_warn "$mon: sin archivo que reproducir"
             continue
         fi
