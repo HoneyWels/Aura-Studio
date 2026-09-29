@@ -82,9 +82,21 @@ aura_default_file() {
         printf '%s' "$f"
         return 0
     fi
-    f=$(aura_pool_files_kind video | head -1)
-    [[ -n $f ]] && printf '%s' "$f"
-    return 0
+    local d
+    for d in "${POOL[@]-}"; do
+        d=${d//\$HOME/$HOME}
+        d=${d//\$RICE/$(aura_rice)}
+        d=${d//rices\/\/walls/rices\/$(aura_rice)\/walls}
+        d=${d//\~/$HOME}
+        if [[ -d "$d" ]]; then
+            f=$(find "$d" -maxdepth 1 -type f \( -name "*.mp4" -o -name "*.webm" -o -name "*.mkv" \) | head -n 1)
+            if [[ -n "$f" ]]; then
+                printf '%s' "$f"
+                return 0
+            fi
+        fi
+    done
+    return 1
 }
 
 # ── Arranque ─────────────────────────────────────────────────
@@ -174,7 +186,7 @@ aura_engine_spawn() {
 
     # esperar a que el socket exista (arranque cold de mpv)
     local i
-    for i in {1..40}; do
+    for i in {1..100}; do
         [[ -S $sock ]] && break
         sleep 0.05
     done

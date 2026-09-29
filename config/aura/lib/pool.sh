@@ -21,6 +21,7 @@ aura_pool_dirs() {
         [[ -n $d ]] || continue
         d=${d//\$HOME/$HOME}
         d=${d//\$RICE/$(aura_rice)}
+        d=${d//rices\/\/walls/rices\/$(aura_rice)\/walls}
         d=${d//\~/$HOME}
         [ -d "$d" ] && printf '%s\n' "$d"
     done
