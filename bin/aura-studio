@@ -658,10 +658,16 @@ class ExplorePanel(QWidget):
         header.addStretch()
 
         self.provider_cb = QComboBox()
-        self.provider_cb.addItems(["MotionBgs", "MoeWalls"])
+        self.provider_cb.addItems(["MotionBgs", "MoeWalls", "Wallhaven (Images)"])
         self.provider_cb.setFixedHeight(32)
-        self.provider_cb.setFixedWidth(120)
-        self.provider_cb.setStyleSheet("""
+        self.provider_cb.setFixedWidth(160)
+        
+        self.res_cb = QComboBox()
+        self.res_cb.addItems(["All Res", "1080p", "1440p", "4K"])
+        self.res_cb.setFixedHeight(32)
+        self.res_cb.setFixedWidth(100)
+        
+        cb_style = """
             QComboBox { 
                 background: rgba(30,30,35,200); border: 1px solid #333333; 
                 color: #cccccc; border-radius: 4px; padding: 4px 8px; font-weight: bold; 
@@ -679,9 +685,21 @@ class ExplorePanel(QWidget):
                 border: 1px solid #333333;
                 outline: none;
             }
-        """)
-        self.provider_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
+        """
+        self.provider_cb.setStyleSheet(cb_style)
+        self.res_cb.setStyleSheet(cb_style)
+        
+        def _on_provider_change():
+            # Show res_cb only for Wallhaven
+            self.res_cb.setVisible("Wallhaven" in self.provider_cb.currentText())
+            self.load_category(self.url_input.text().strip())
+            
+        self.provider_cb.currentIndexChanged.connect(_on_provider_change)
+        self.res_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
+        
         header.addWidget(self.provider_cb)
+        header.addWidget(self.res_cb)
+        self.res_cb.setVisible(False)
 
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Search or paste URL…")
@@ -851,6 +869,36 @@ class ExplorePanel(QWidget):
                                     slug = slug_match.group(1)
                                     dl_url = f"{base}/wp-content/uploads/preview/{year}/{slug}-preview.webm"
                                     items.append((slug, clean_title, thumb_url, dl_url))
+                    except Exception:
+                        break
+
+            elif provider.startswith("Wallhaven"):
+                base = "https://wallhaven.cc/api/v1/search"
+                import json
+                
+                res_idx = self.res_cb.currentIndex()
+                res_map = {0: "", 1: "1920x1080", 2: "2560x1440", 3: "3840x2160"}
+                res = res_map.get(res_idx, "")
+                
+                query = tag.replace("tag:", "")
+                params = [("q", query)]
+                if res:
+                    params.append(("resolutions", res))
+                params.append(("sorting", "random"))
+                
+                for p in range(1, 3):
+                    url = base + "?" + urllib.parse.urlencode(params + [("page", str(p))])
+                    req = urllib.request.Request(url, headers=headers)
+                    try:
+                        resp = urllib.request.urlopen(req, timeout=10).read().decode("utf-8")
+                        data = json.loads(resp)
+                        for d in data.get("data", []):
+                            thumb = d.get("thumbs", {}).get("small", "")
+                            dl = d.get("path", "")
+                            res_str = d.get("resolution", "")
+                            if dl not in seen:
+                                seen.add(dl)
+                                items.append((d.get("id", ""), res_str, thumb, dl))
                     except Exception:
                         break
 
