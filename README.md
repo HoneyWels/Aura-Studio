@@ -17,7 +17,7 @@ A lightweight, open-source Animated Wallpaper Engine for X11 Window Managers (BS
 You can easily install Aura Studio by cloning this repository and running the automated install script:
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/Aura-Studio.git
+git clone https://github.com/HoneyWels/Aura-Studio.git
 cd Aura-Studio
 ./install.sh
 ```
