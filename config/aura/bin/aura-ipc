@@ -1,0 +1,131 @@
+#!/usr/bin/env python3
+"""
+aura-ipc: cliente minimo para el socket IPC de mpv.
+
+    aura-ipc <socket> <comando-json>      envia y muestra la respuesta
+    aura-ipc <socket> --get <propiedad>   consulta una propiedad
+    aura-ipc <socket> --set <prop> <valor>
+    aura-ipc <socket> --load <archivo>    carga un archivo (replace)
+    aura-ipc <socket> --playlist <accion> next|prev|clear
+
+Escribe la respuesta en stdout. Devuelve 1 si no hay socket o no responde.
+"""
+import json
+import os
+import socket
+import sys
+import time
+
+TIMEOUT = 3.0
+
+
+class Client:
+    def __init__(self, path, fresh=True):
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(TIMEOUT)
+        self.sock.connect(path)
+        self.buf = b""
+        if fresh:
+            self.sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1 << 20)
+
+    def cmd(self, payload):
+        """payload: list de argumentos del comando."""
+        req = {"command": payload, "request_id": int(time.time() * 1000) % 100000}
+        self.sock.sendall((json.dumps(req) + "\n").encode())
+        return self.read()
+
+    def read(self):
+        deadline = time.time() + TIMEOUT
+        while b"\n" not in self.buf:
+            if time.time() > deadline:
+                break
+            try:
+                chunk = self.sock.recv(1 << 16)
+            except socket.timeout:
+                break
+            if not chunk:
+                break
+            self.buf += chunk
+        line, _, rest = self.buf.partition(b"\n")
+        self.buf = rest
+        if not line:
+            return None
+        try:
+            return json.loads(line.decode(errors="replace"))
+        except json.JSONDecodeError:
+            return {"raw": line.decode(errors="replace")}
+
+    def close(self):
+        try:
+            self.sock.close()
+        except OSError:
+            pass
+
+
+def json_value(text):
+    try:
+        return int(text)
+    except ValueError:
+        pass
+    try:
+        return float(text)
+    except ValueError:
+        pass
+    low = text.lower()
+    if low in ("true", "yes", "on"):
+        return True
+    if low in ("false", "no", "off"):
+        return False
+    return text
+
+
+def main():
+    if len(sys.argv) < 3:
+        print(__doc__, file=sys.stderr)
+        return 2
+    path, action = sys.argv[1], sys.argv[2]
+    args = sys.argv[3:]
+
+    if not os.path.exists(path):
+        print("aura-ipc: no existe el socket %s" % path, file=sys.stderr)
+        return 1
+
+    try:
+        c = Client(path)
+    except OSError as exc:
+        print("aura-ipc: no se pudo conectar (%s)" % exc, file=sys.stderr)
+        return 1
+
+    try:
+        if action == "--get":
+            resp = c.cmd(["get_property", args[0] if args else "time-pos"])
+        elif action == "--set":
+            resp = c.cmd(["set_property", args[0], json_value(args[1])])
+        elif action == "--load":
+            resp = c.cmd(["loadfile", args[0], "replace"])
+        elif action == "--playlist":
+            act = args[0] if args else "next"
+            cmd = {"next": "playlist-next", "prev": "playlist-prev",
+                   "clear": "playlist-clear"}.get(act, "playlist-next")
+            resp = c.cmd([cmd])
+        elif action == "--cmd":
+            resp = c.cmd(json.loads(" ".join(args)))
+        else:
+            resp = c.cmd([action] + args)
+    finally:
+        c.close()
+
+    if resp is None:
+        return 1
+    if "error" in resp and resp["error"] not in ("success", None):
+        print("aura-ipc: error de mpv: %s" % resp["error"], file=sys.stderr)
+        return 1
+    if "data" in resp:
+        print(json.dumps(resp["data"]))
+    else:
+        print(json.dumps(resp))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

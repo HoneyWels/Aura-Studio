@@ -1,0 +1,459 @@
+# =============================================================
+#  █████╗ ██╗   ██╗██████╗ ██╗
+# ██╔══██╗██║   ██║██╔══██╗██║
+# ███████║██║   ██║██████╔╝██║
+# ██╔══██║██║   ██║██╔══██╗██║
+# ██║  ██║╚██████╔╝██████╔╝███████╗
+# ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝
+#  aura — switcher: rofi con preview de video en vivo
+# =============================================================
+#
+#  COMO FUNCIONA EL PREVIEW
+#
+#  rofi 2.0 no expone eventos de navegacion con los que seaside el raton:
+#  -preview no existe, y el protocolo interactivo de script-mode (el comando
+#  `rofi <delay>` dentro del script) sale con rc=1. Solo queda el modelo
+#  ROFI_RETV, que se dispara al confirmar con Enter.
+#
+#  Asi que el preview sigue al PUNTERO: se lee la posicion del raton cada
+#  ~90ms mientras el menu esta abierto, se mapea a la fila sobre la que esta
+#  y se carga ese archivo en el mpv de preview.
+#
+#  Al confirmar (Enter o clic) se aplica SIEMPRE la entrada que devuelve
+#  rofi, que es la correcta: el preview nunca aplica nada por su cuenta.
+#  Si estas filtrando con el teclado, el preview puede ir un item
+#  desfasado mientras escribes, pero lo que se aplica siempre es exacto.
+#
+#  La posicion del raton se mapea con la geometria REAL de la ventana de
+#  rofi: el alto de fila se deduce de la altura medida, de modo que
+#  AURA_INPUTBAR_H es el unico numero que hay que mantener al dia.
+# =============================================================
+
+[[ -n ${_AURA_SWITCHER_SH:-} ]] && return 0
+_AURA_SWITCHER_SH=1
+
+# Deben coincidir con rofi/switcher.rasi
+AURA_ROW_H=${AURA_ROW_H:-46}
+AURA_INPUTBAR_H=${AURA_INPUTBAR_H:-38}
+
+aura_switcher_usage() {
+    cat <<-EOF
+	aura switcher [opciones]
+	  --kind video|image|all   filtrar el pool (por defecto: video)
+	  --dir <carpeta>          usar esa carpeta en vez del pool
+	  --no-preview             solo lista, sin ventana de video
+	EOF
+}
+
+# ── Geometria ────────────────────────────────────────────────
+# aura_geo_parse "1360x768+0+0" -> GW GH GX GY
+aura_geo_parse() {
+    local g=$1 rest
+    GW=${g%%x*}; rest=${g#*x}
+    GH=${rest%%+*}; rest=${rest#*+}
+    GX=${rest%%+*}; GY=${rest#*+}
+}
+
+# Geometria (WxH+X+Y) del monitor que contiene el punto X,Y
+aura_monitor_geo_at() {
+    local x=$1 y=$2 mon geo w h mx my
+    while read -r mon geo; do
+        aura_geo_parse "$geo"
+        w=$GW h=$GH mx=$GX my=$GY
+        (( x >= mx && x < mx + w && y >= my && y < my + h )) && {
+            printf '%s' "$geo"
+            return 0
+        }
+    done < <(aura_monitors)
+    return 1
+}
+
+# ── Lista de entradas ────────────────────────────────────────
+#   $1 filas rofi   (etiqueta\0icono\0ruta)
+#   $2 indice       (rutas, en el mismo orden)
+#   $3 etiquetas    (texto plano, una por fila, para resolver la eleccion)
+#   $4 total        (opcional: cuantos hay en el pool, para el titulo)
+#
+# Solo se genera lo que se va a ver: la lista se recorta a LIST_MAX ANTES
+# de generar miniaturas, porque ffmpeg/magick tardan ~0.2-1s por archivo y
+# calentar los 150 del pool hacia que rofi tardase 7s en aparecer.
+aura_switcher_build_rows() {
+    local kind=${1:-video} extra=${2:-} rows=$3 index=$4 labels=$5 total_file=${6:-}
+    local max=${AURA_LIST_MAX:-11}
+    local -a files=()
+    if [[ -n $extra && -d $extra ]]; then
+        mapfile -t files < <(find "$extra" -maxdepth 2 -type f \
+            \( -iname '*.mp4' -o -iname '*.mkv' -o -iname '*.webm' -o -iname '*.gif' \
+               -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.png' -o -iname '*.webp' \) 2>/dev/null | sort)
+    else
+        mapfile -t files < <(aura_pool_files_kind "$kind")
+    fi
+    ((${#files[@]})) || return 1
+    [[ -n $total_file ]] && printf '%s\n' "${#files[@]}" >"$total_file"
+    ((${#files[@]} > max)) && files=("${files[@]:0:max}")
+
+    aura_thumbs_warm "${files[@]}"
+
+    : >"$rows"; : >"$index"; : >"$labels"
+    local -A seen=()
+    local f base label parent
+    for f in "${files[@]}"; do
+        base=${f##*/}
+        if [[ -n ${seen[$base]-} ]]; then
+            parent=${f%/*}; parent=${parent##*/}
+            label=$parent/$base
+        else
+            label=$base
+        fi
+        seen[$base]=1
+        printf '%s\0icon\x1f%s\n' "$label" "$(aura_thumb "$f" 96)" >>"$rows"
+        printf '%s\n' "$f" >>"$index"
+        printf '%s\n' "$label" >>"$labels"
+    done
+    return 0
+}
+
+# ── Preview ──────────────────────────────────────────────────
+# mpv dentro de una ventana xwinwrap override-redirect: se mapea DESPUES de
+# rofi y al no estar gestionada por bspwm, la preview se dibuja encima de
+# todo (incluido el menu) y no la secuestra ninguna regla de bspwm.
+#
+# -ovr y NO -ov: con -ov esta version de xwinwrap (0.9) revienta con
+# "BadMatch" al crear la ventana. -ovr marca la ventana raiz y funciona.
+aura_preview_start() {
+    local geo=$1 first=$2
+    AURA_PREVIEW_SOCK=$AURA_RUNTIME/preview.sock
+    rm -f "$AURA_PREVIEW_SOCK"
+    setsid xwinwrap -g "$geo" -un -ovr -nf -ni -st -sp -- \
+        "$(command -v mpv)" \
+        --no-config --no-terminal --no-osc --no-input-default-bindings \
+        --no-osd-bar --no-sub --no-audio --no-border --keep-open=yes \
+        --title=aura-preview --hwdec=auto-safe --gpu-api=auto \
+        --focus-on=never \
+        --loop-file=inf --image-display-duration=inf \
+        --autofit-larger=100%x100% --force-window=immediate \
+        --input-ipc-server="$AURA_PREVIEW_SOCK" \
+        --geometry="$geo" "$first" \
+        </dev/null >"$AURA_RUNTIME/preview.log" 2>&1 &
+    AURA_PREVIEW_PID=$!
+    local i
+    for i in {1..60}; do
+        [[ -S $AURA_PREVIEW_SOCK ]] && break
+        aura_alive "$AURA_PREVIEW_PID" || return 1
+        sleep 0.05
+    done
+    # Asegurar que la preview quede por encima (layer=above)
+    aura_preview_set_above
+    return 0
+}
+
+# Pone la ventana de preview en layer=above para que se vea sobre otras ventanas
+aura_preview_set_above() {
+    local wid i
+    for i in {1..30}; do
+        wid=$(xdotool search --name aura-preview 2>/dev/null | head -1)
+        [[ -n $wid ]] && break
+        sleep 0.1
+    done
+    if [[ -n $wid ]]; then
+        bspc node "$wid" -l above 2>/dev/null
+    else
+        echo "DEBUG: preview window not found" >> /tmp/preview_debug.log
+    fi
+    return 0
+}
+
+aura_preview_load() {
+    local file=$1
+    [[ -n $file && -S ${AURA_PREVIEW_SOCK:-} ]] || return 1
+    "$AURA_BIN_DIR/aura-ipc" "$AURA_PREVIEW_SOCK" --load "$file" >/dev/null 2>&1
+}
+
+# Que fichero tiene mpv ahora mismo en pantalla ("" si esta cambiando)
+aura_preview_path() {
+    [[ -S ${AURA_PREVIEW_SOCK:-} ]] || return 1
+    "$AURA_BIN_DIR/aura-ipc" "$AURA_PREVIEW_SOCK" --get path 2>/dev/null |
+        tr -d '"' | head -1
+}
+
+aura_preview_stop() {
+    # el IPC quit cierra mpv y xwinwrap se va solo
+    if [[ -S ${AURA_PREVIEW_SOCK:-} ]]; then
+        "$AURA_BIN_DIR/aura-ipc" "$AURA_PREVIEW_SOCK" quit >/dev/null 2>&1
+    fi
+    if [[ -n ${AURA_PREVIEW_PID:-} ]] && aura_alive "$AURA_PREVIEW_PID"; then
+        aura_kill_tree "$AURA_PREVIEW_PID" TERM
+    fi
+    [[ -n ${AURA_PREVIEW_SOCK:-} ]] && rm -f "$AURA_PREVIEW_SOCK"
+    AURA_PREVIEW_PID= AURA_PREVIEW_SOCK=
+    return 0
+}
+
+# El menu es modal, asi que el foco del teclado tiene que quedarse en rofi.
+# La preview entra como cliente flotante (bspwm la gestiona y le da el foco)
+# y mpv se lo queda al mapear: por eso hay que devolvérselo a rofi. Se
+# reintenta porque el momento exacto en que mpv roba el foco no es fijo.
+aura_switcher_focus_menu() {
+    local wid=$1 i cur
+    [[ -n $wid ]] || return 1
+    for i in {1..60}; do
+        xdotool search --name aura-preview >/dev/null 2>&1 && break
+        aura_alive "${ROFI_PID:-}" || return 1
+        sleep 0.05
+    done
+    for i in 1 2 3 4 5 6; do
+        sleep 0.2
+        xdotool windowfocus "$wid" 2>/dev/null
+        # y el WM tambien tiene que creer que el foco es del menu
+        if aura_have bspc && bspc query -T -n >/dev/null 2>&1; then
+            bspc node -f "@$wid" 2>/dev/null || bspc node -f "^$wid" 2>/dev/null
+            xdotool windowfocus "$wid" 2>/dev/null
+        fi
+        sleep 0.15
+        cur=$(xdotool getwindowfocus 2>/dev/null)
+        [[ $cur == "$wid" ]] && return 0
+    done
+    aura_warn "el preview se ha quedado con el foco del teclado"
+    return 1
+}
+
+# ── Seguimiento del puntero ──────────────────────────────────
+# rofi 2.0 ignora element{height} e inputbar{height}: el alto de fila lo
+# marca element-icon.size + el padding vertical del element. En vez de
+# fiarnos del numero escrito en aura.conf, lo deducimos de la ventana que
+# hemos medido:  alto = INPUTBAR_H + fila * visibles.
+aura_switcher_row_height() {
+    local win_h=$1 visible=$2 r
+    if (( visible > 0 && win_h > 0 )); then
+        r=$(( (win_h - AURA_INPUTBAR_H) / visible ))
+        (( r >= 8 )) && { echo "$r"; return 0; }
+    fi
+    echo "$AURA_ROW_H"
+}
+
+# indice de fila a partir de (x,y) sobre la lista de rofi
+aura_switcher_hover_index() {
+    local mx=$1 my=$2 win_x=$3 win_y=$4 win_w=$5 win_h=$6 row_h=$7
+    local rel idx
+    (( mx < win_x - 12 || mx > win_x + win_w + 12 )) && { echo -1; return; }
+    (( my < win_y || my > win_y + win_h )) && { echo -1; return; }
+    rel=$(( my - win_y - AURA_INPUTBAR_H ))
+    (( rel < 0 )) && { echo -1; return; }
+    idx=$(( rel / row_h ))
+    echo "$idx"
+}
+
+aura_switcher_follow() {
+    local index_file=$1 win_x=$2 win_y=$3 win_w=$4 win_h=$5 max=$6 row_h=$7
+    local loc mx my idx cur=-1 file got dbg
+    dbg=${AURA_FOLLOW_DEBUG:+$AURA_RUNTIME/follow.log}
+    while aura_alive "$ROFI_PID"; do
+        loc=$(xdotool getmouselocation --shell 2>/dev/null)
+        if [[ -n $loc ]]; then
+            mx=$(sed -n 's/^X=//p' <<<"$loc")
+            my=$(sed -n 's/^Y=//p' <<<"$loc")
+            idx=$(aura_switcher_hover_index "${mx:-0}" "${my:-0}" \
+                "$win_x" "$win_y" "$win_w" "$win_h" "$row_h")
+            if (( idx >= 0 && idx < max && idx != cur )); then
+                cur=$idx
+                file=$(sed -n "$((idx + 1))p" "$index_file")
+                aura_preview_load "$file"
+                # mpv tarda un poco en cambiar de fichero y el raton va mas
+                # rapido: comprobamos y, si aun no ha cogido el suyo, se
+                # reintenta en la vuelta siguiente (cur = -1)
+                sleep 0.05
+                got=$(aura_preview_path)
+                [[ -n $dbg ]] && printf 'idx=%s y=%s pido=%s tengo=%s %s\n' \
+                    "$idx" "$my" "${file##*/}" "${got##*/}" \
+                    "$([[ ${got##*/} == "${file##*/}" ]] && echo OK || echo retry)" >>"$dbg"
+                [[ ${got##*/} == "${file##*/}" ]] || cur=-1
+            elif (( idx < 0 )); then
+                cur=-1        # fuera del menu: al volver se resincroniza
+            fi
+        fi
+        sleep "${AURA_FOLLOW_MS:-0.09}"
+    done
+}
+
+# ── Hueco para el preview ────────────────────────────────────
+# Coloca el preview a la derecha del menu, o a la izquierda si no cabe.
+# Imprime "WxH+X+Y".
+aura_switcher_preview_geo() {
+    local win_x=$1 win_y=$2 win_w=$3 win_h=$4
+    local mgeom margin room_right room_left room side pw ph px py
+
+    # OJO: aura_primary_monitor / aura_monitors devuelven "NOMBRE GEO"; el
+    # parser necesita solo la geometria, por eso el cut -d' ' -f2-
+    mgeom=$(aura_monitor_geo_at "$win_x" "$win_y") ||
+        mgeom=$(aura_primary_geo) ||
+        mgeom=$(aura_monitors | head -1 | cut -d' ' -f2-)
+    [[ -n $mgeom && $mgeom == *x* ]] || return 1
+    aura_geo_parse "$mgeom"
+    margin=${SWITCHER_MARGIN:-30}
+
+    room_right=$(( GX + GW - (win_x + win_w) - margin ))
+    room_left=$(( win_x - GX - margin ))
+    (( room_right >= room_left )) && side=right || side=left
+
+    if [[ $side == right ]]; then
+        room=$room_right; px=$(( win_x + win_w + margin ))
+    else
+        room=$room_left; px=$(( win_x - margin ))
+    fi
+
+    pw=$(( room * 86 / 100 ))
+    (( pw > GW * 52 / 100 )) && pw=$(( GW * 52 / 100 ))
+    (( pw < 240 )) && pw=240
+    ph=$(( pw * 9 / 16 ))
+    (( ph > GH * 66 / 100 )) && { ph=$(( GH * 66 / 100 )); pw=$(( ph * 16 / 9 )); }
+
+    py=$(( win_y + (win_h - ph) / 2 ))
+    (( py < GY )) && py=$GY
+    (( py + ph > GY + GH )) && py=$(( GY + GH - ph ))
+
+    printf '%dx%d+%d+%d' "$pw" "$ph" "$px" "$py"
+}
+
+# ── Principal ────────────────────────────────────────────────
+aura_switcher_run() {
+    local kind=video extra="" want_preview=1
+    while (($#)); do
+        case $1 in
+            --kind) kind=${2:-video}; shift 2 ;;
+            --dir) extra=${2:-}; shift 2 ;;
+            --no-preview) want_preview=0; shift ;;
+            -h|--help) aura_switcher_usage; return 0 ;;
+            *) aura_switcher_usage; aura_die "switcher: opcion desconocida ($1)" ;;
+        esac
+    done
+
+    aura_need rofi xdotool
+    aura_init_dirs
+    [[ $want_preview == 1 ]] && aura_need mpv xwinwrap
+
+    local rows=$AURA_RUNTIME/sw.rows index=$AURA_RUNTIME/sw.index
+    local labels=$AURA_RUNTIME/sw.labels out=$AURA_RUNTIME/sw.out
+    local totalf=$AURA_RUNTIME/sw.total
+    if ! aura_switcher_build_rows "$kind" "$extra" "$rows" "$index" "$labels" "$totalf"; then
+        aura_warn "no hay wallpapers en el pool (revisa POOL en aura.conf)"
+        return 1
+    fi
+    : >"$out"
+
+    # El menu es modal. Al cerrarse rofi, el foco cae en la preview (que ya
+    # esta muerta) y el teclado se queda sin dueño, asi que guardamos donde
+    # estaba. El RETURN cubre todos los caminos de salida de aqui en adelante
+    # (cancelar, no encontrar el archivo, aplicar...).
+    aura_init_dirs
+    aura_focus_save
+    trap 'aura_focus_restore' RETURN
+
+    # build_rows ya deja exactamente las filas que se ven, asi que el
+    # mapeo puntero -> fila es exacto
+    local total visible
+    total=$(cat "$totalf" 2>/dev/null) || total=0
+    visible=$(wc -l <"$index")
+    (( total > visible )) && aura_log "mostrando $visible de $total (LIST_MAX=${AURA_LIST_MAX:-11})"
+
+    local theme=$AURA_HOME/rofi/switcher.rasi
+    [[ -r $theme ]] || aura_die "falta el tema $theme"
+
+    # 1) abrir rofi
+    #    -l:        exactamente las filas que vamos a mapear con el raton
+    local -a rofi_args=(
+        -dmenu -i
+        -p "  aura · $total"
+        -theme "$theme"
+        -l "$visible"
+    )
+    rofi "${rofi_args[@]}" <"$rows" >"$out" 2>"$AURA_RUNTIME/rofi.err" &
+    ROFI_PID=$!
+
+    # 2) localizar la ventana y leer su geometria real
+    local rofi_wid="" win_x=0 win_y=0 win_w=0 win_h=0 i g
+    for i in {1..200}; do
+        aura_alive "$ROFI_PID" || break
+        rofi_wid=$(xdotool search --pid "$ROFI_PID" 2>/dev/null | head -1)
+        [[ -n $rofi_wid ]] && break
+        sleep 0.05
+    done
+    if [[ -n $rofi_wid ]]; then
+        # puede tardar un par de segundos en tener la geometria definitiva
+        for i in {1..20}; do
+            g=$(xdotool getwindowgeometry --shell "$rofi_wid" 2>/dev/null)
+            win_h=$(sed -n 's/^HEIGHT=//p' <<<"$g")
+            [[ -n $win_h && $win_h -gt 60 ]] && break
+            sleep 0.05
+        done
+        win_x=$(sed -n 's/^X=//p' <<<"$g")
+        win_y=$(sed -n 's/^Y=//p' <<<"$g")
+        win_w=$(sed -n 's/^WIDTH=//p' <<<"$g")
+    fi
+    [[ -n $win_w && -n $win_h ]] || aura_warn "no se pudo medir la ventana de rofi"
+
+    # alto de fila deducido de la ventana real (ver aura_switcher_row_height)
+    local row_h
+    row_h=$(aura_switcher_row_height "${win_h:-0}" "$visible")
+    if [[ $row_h != "$AURA_ROW_H" ]]; then
+        aura_log "fila real ${row_h}px (aura.conf dice ${AURA_ROW_H}px), uso la real"
+    fi
+
+    # 3) preview en vivo, pegado al menu
+    if [[ $want_preview == 1 && -n $win_w && -n $win_h ]]; then
+        local firstfile pgeo
+        firstfile=$(head -1 "$index")
+        pgeo=$(aura_switcher_preview_geo "$win_x" "$win_y" "$win_w" "$win_h")
+        if [[ -n $firstfile && -n $pgeo ]] && aura_preview_start "$pgeo" "$firstfile"; then
+            aura_switcher_follow "$index" "$win_x" "$win_y" "$win_w" "$win_h" \
+                "$visible" "$row_h" &
+            FOLLOW_PID=$!
+            # el preview se dibuja encima pero NO puede quedarse con el foco:
+            # sin esto, escribir en el filtro de rofi no funciona
+            aura_switcher_focus_menu "$rofi_wid"
+        else
+            aura_warn "no se pudo abrir el preview (revisa $AURA_RUNTIME/preview.log)"
+            want_preview=0
+        fi
+    fi
+
+    # 4) esperar la eleccion
+    wait "$ROFI_PID" 2>/dev/null
+    
+    # ───────────────
+
+    local picked
+    # Rofi 1.7+ puede devolver los atributos custom al final separados por nulos
+    # o como literales si hay un bug en el parsing. Limpiamos ambos y quitamos espacios extra.
+    picked=$(head -1 "$out" | sed 's/\x00.*//' | sed -E 's/\\0icon.*//' | sed 's/[[:space:]]*$//')
+    
+
+    [[ -n ${FOLLOW_PID:-} ]] && kill "$FOLLOW_PID" 2>/dev/null
+    aura_preview_stop
+    # el teclado vuelve a su sitio antes de aplicar (aplicar tarda, y el
+    # trap de RETURN ya no hara nada: focus.saved se borro aqui)
+    aura_focus_restore
+
+    [[ -n $picked ]] || { aura_warn "no se eligio nada"; rm -f "$rows" "$index" "$labels" "$out"; return 1; }
+
+    # 5) aplicar EXACTAMENTE lo que devolvio rofi: la etiqueta se resuelve
+    #    contra el archivo de etiquetas de esta misma corrida
+    local n path=
+    n=$(awk -v want="$picked" '$0 == want { print NR; exit }' "$labels" 2>/dev/null)
+    [[ -n $n ]] || n=$(awk -v want="$picked" 'index($0, want) { print NR; exit }' "$index" 2>/dev/null)
+    
+    
+    
+    [[ -n $n ]] && path=$(sed -n "${n}p" "$index")
+
+
+    rm -f "$rows" "$index" "$labels" "$out" "$totalf" \
+        "$AURA_RUNTIME/rofi.err"
+
+    if [[ -z $path || ! -f $path ]]; then
+        aura_warn "no se encontro el archivo de '$picked'"
+        return 1
+    fi
+
+    aura_apply "$path"
+    return 0
+}

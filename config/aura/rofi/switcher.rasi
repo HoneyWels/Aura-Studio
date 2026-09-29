@@ -1,0 +1,126 @@
+// =============================================================
+//  aura — switcher de wallpapers
+//
+//  MEDIDAS (rofi 2.0 NO respeta element{height} ni inputbar{height}):
+//    alto de fila   = element-icon.size + 2 * element.padding(vertical)
+//    alto inputbar  = alto_de_texto(16) + 2 * inputbar.padding(vertical)
+//  Ahora mismo: 34+2*6 = 46 px de fila, 16+2*11 = 38 px de inputbar.
+//  switcher.sh mide la ventana real y recalcula la fila por si acaso,
+//  asi que si tocas esto solo es cosa de AURA_INPUTBAR_H (aura.conf).
+// =============================================================
+
+@import "/home/wels/.config/bspwm/config/rofi-themes/shared.rasi"
+
+configuration {
+    modi:            "dmenu";
+    show-icons:      true;
+    display-drun:    "Applications";
+    drun-display-format: "{name}";
+    font:            "Ubuntu 11";
+}
+
+window {
+    enabled:         true;
+    fullscreen:      false;
+    width:           450px;
+    transparency:    "real";
+    cursor:          "default";
+    spacing:         0px;
+    padding:         15px;
+    border:          2px;
+    border-radius:   15px;
+    border-color:    @selected;
+    location:        center;
+    anchor:          center;
+    background-color: @background;
+}
+
+mainbox {
+    enabled:         true;
+    children:        [ "inputbar", "listview" ];
+    spacing:         15px;
+    background-color: transparent;
+}
+
+inputbar {
+    enabled:         true;
+    padding:         15px;
+    border-radius:   10px;
+    background-color: @background-alt;
+    text-color:      @foreground;
+    children:        [ "prompt", "entry" ];
+}
+
+prompt {
+    enabled:         true;
+    padding:         0px 10px 0px 0px;
+    background-color: transparent;
+    text-color:      @selected;
+}
+
+entry {
+    enabled:         true;
+    background-color: transparent;
+    text-color:      @foreground;
+    cursor:          text;
+    placeholder:     "Buscar wallpaper...";
+    placeholder-color: inherit;
+}
+
+listview {
+    enabled:         true;
+    columns:         1;
+    lines:           6;
+    spacing:         8px;
+    padding:         0px;
+    layout:          vertical;
+    reverse:         false;
+    fixed-height:    true;
+    scrollbar:       false;
+    cycle:           true;
+    cursor:          "default";
+    background-color: transparent;
+    text-color:      @foreground;
+}
+
+element {
+    enabled:         true;
+    spacing:         15px;
+    padding:         10px;
+    border-radius:   10px;
+    cursor:          "pointer";
+    background-color: transparent;
+    text-color:      @foreground;
+    children:        [ "element-icon", "element-text" ];
+}
+
+element-icon {
+    size:            64px;
+    border-radius:   8px;
+    cursor:          inherit;
+    background-color: transparent;
+    text-color:      inherit;
+}
+
+element-text {
+    vertical-align:  0.5;
+    horizontal-align: 0.0;
+    cursor:          inherit;
+    background-color: transparent;
+    text-color:      inherit;
+    font:            "Ubuntu Bold 12";
+}
+
+element selected.normal {
+    background-color: @selected;
+    text-color:      @background;
+}
+
+element selected.urgent {
+    background-color: @urgent;
+    text-color:      @background;
+}
+
+element normal.urgent {
+    text-color:      @urgent;
+}

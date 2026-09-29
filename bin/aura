@@ -1,0 +1,428 @@
+#!/usr/bin/env bash
+# =============================================================
+#  █████╗ ██╗   ██╗██████╗ ██╗
+# ██╔══██╗██║   ██║██╔══██╗██║
+# ███████║██║   ██║██████╔╝██║
+# ██╔══██║██║   ██║██╔══██╗██║
+# ██║  ██║╚██████╔╝██████╔╝███████╗
+# ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝
+#  aura — fondo animado con auto-theming para bspwm/X11
+# =============================================================
+#  El fondo es una ventana _NET_WM_WINDOW_TYPE_DESKTOP de xwinwrap con mpv
+#  dentro: bspwm no la gestiona, picom la pinta debajo de todo y se ve en
+#  todos los escritorios. El color dominante del video se propaga a los
+#  bordes de bspwm, polybar, rofi, dunst y terminales.
+#
+#  Config:  ~/.config/aura/aura.conf
+#  Estado:  ${XDG_RUNTIME_DIR:-/tmp}/aura-$UID
+#  Cache:   ${XDG_CACHE_HOME:-~/.cache}/aura
+# =============================================================
+
+set -uo pipefail
+
+AURA_HOME=${AURA_HOME:-$HOME/.config/aura}
+AURA_LIB=$AURA_HOME/lib
+AURA_CONF=$AURA_HOME/aura.conf
+
+# shellcheck source=../lib/util.sh
+source "$AURA_LIB/util.sh"
+# shellcheck source=../lib/pool.sh
+source "$AURA_LIB/pool.sh"
+# shellcheck source=../lib/engine.sh
+source "$AURA_LIB/engine.sh"
+# shellcheck source=../lib/accent.sh
+source "$AURA_LIB/accent.sh"
+# shellcheck source=../lib/apply.sh
+source "$AURA_LIB/apply.sh"
+# shellcheck source=../lib/guard.sh
+source "$AURA_LIB/guard.sh"
+# shellcheck source=../lib/switcher.sh
+source "$AURA_LIB/switcher.sh"
+# shellcheck source=../lib/control.sh
+source "$AURA_LIB/control.sh"
+
+AURA_VERSION="1.0"
+
+# ── Config ───────────────────────────────────────────────────
+# Valores que se pueden sobreescribir desde el entorno
+AURA_CONF_KEYS="POOL POOL_DEPTH KIND LIST_MAX THEME THEME_TARGETS THEME_INTERVAL
+THEME_MIN_DELTA POLYBAR_KEYS SMOOTH FRAME_TIME AUTO_PAUSE BATTERY_PAUSE
+BATTERY_PAUSE_BELOW GAME_CLASSES START_PAUSED AURA_TICK SWITCHER_MARGIN
+FOLLOW_MS AURA_INPUTBAR_H AURA_ROW_H THUMB_GC_DAYS"
+
+aura_load_conf() {
+    [[ -r $AURA_CONF ]] || aura_die "no se encuentra la configuracion: $AURA_CONF"
+
+    # Todo lo que se asigna dentro de una funcion se queda LOCAL a ella, y
+    # aura.conf se sourcea aqui: sin "declare -g" ninguna de sus variables
+    # llegaria al resto del script (y THEME=0 no desactivaria el theming).
+    # Por eso se leen primero los valores del entorno y se vuelven a poner
+    # como globales despues de sourcear, que es lo que manda sobre el
+    # fichero:  THEME=0 aura start, AURA_LIST_MAX=20 aura switcher, ...
+    # Solo se guardan los ESCALARES: ${!POOL} daria su primer elemento.
+    local -a env_names=() env_vals=() env_pool=()
+    local have_env_pool=0
+    local k
+    for k in $AURA_CONF_KEYS; do
+        if [[ -v $k ]]; then
+            if [[ $k == POOL ]]; then
+                env_pool=("${POOL[@]}")
+                (( ${#env_pool[@]} )) && have_env_pool=1
+            else
+                env_names+=("$k")
+                env_vals+=("${!k}")
+            fi
+        fi
+    done
+
+    # la rice activa, para que el pool pueda escribir $RICE/... en el conf
+    declare -g RICE="${RICE:-$(aura_rice)}"
+    # shellcheck disable=SC1090
+    . "$AURA_CONF"
+    # lo que venga del entorno gana
+    for k in "${!env_names[@]}"; do
+        declare -g "${env_names[$k]}=${env_vals[$k]}"
+    done
+    # POOL es un array y queda local a esta funcion (al salir se perderia, y
+    # sin pool el motor no tiene nada que reproducir), asi que se rescata.
+    local -a pool=("${POOL[@]}")
+    (( have_env_pool )) && pool=("${env_pool[@]}")
+    declare -g POOL=("${pool[@]}")
+
+    # defaults: tambien globales, que los leen otras funciones. Solo si la
+    # variable NO existe todavia.
+    local d name
+    for d in \
+        'KIND=video' 'LIST_MAX=11' 'THEME=1' \
+        'THEME_TARGETS=bspwm polybar rofi dunst kitty ghostty mpv' \
+        'THEME_INTERVAL=15' 'THEME_MIN_DELTA=7' 'POLYBAR_KEYS=bc' \
+        'SMOOTH=40' 'FRAME_TIME=2' 'AUTO_PAUSE=1' 'BATTERY_PAUSE=1' \
+        'BATTERY_PAUSE_BELOW=60' 'GAME_CLASSES=' 'START_PAUSED=0' \
+        'AURA_TICK=2' 'SWITCHER_MARGIN=30' 'FOLLOW_MS=0.09' \
+        'AURA_INPUTBAR_H=38' 'AURA_ROW_H=46' 'THUMB_GC_DAYS=30'
+    do
+        name=${d%%=*}
+        [[ -v $name ]] || declare -g "$d"
+    done
+    # AURA_LIST_MAX es el override del switcher: si viene del entorno se respeta.
+    declare -g AURA_LIST_MAX="${AURA_LIST_MAX:-$LIST_MAX}"
+}
+
+# ── Ayuda ────────────────────────────────────────────────────
+aura_help() {
+    cat <<EOF
+  █████╗ ██╗   ██╗██████╗ ██╗
+ ██╔══██╗██║   ██║██╔══██╗██║
+ ███████║██║   ██║██████╔╝██║
+ ██╔══██║██║   ██║██╔══██╗██║
+ ██║  ██║╚██████╔╝██████╔╝███████╗
+ ╚═╝  ╚═╝ ╚═════╝ ╚═════╝ ╚══════╝
+  aura $AURA_VERSION — fondo animado con auto-theming para bspwm/X11
+
+  USAR
+    aura start [archivo]        arranca el motor (+ guard) y el accent
+    aura stop                   para el motor y el guard
+    aura apply <archivo>        pone un fondo y propaga su color
+    aura switcher               menu con preview en vivo (rofi + mpv)
+    aura next | prev            siguiente/anterior del pool
+    aura pause | resume | toggle-pause
+
+  ORGANIZAR
+    aura screen                 ver que archivo va en cada monitor
+    aura screen <MON> <archivo>  fijar un fondo solo para ese monitor
+    aura screen <MON> --clear     quitar el fijo de ese monitor
+    aura screen --paths         "MON<TAB>ruta" por monitor (para scripts)
+    aura pool [video|image]     listar el pool
+    aura status                 estado del motor, del guard y del acento
+
+  COLOR
+    aura theme [archivo]        recalcula el acento ahora
+    aura theme --reset          vuelve a los colores de la rice
+    aura theme --reapply        vuelve a volcar el acento guardado (tras Theme.sh)
+    aura wallsync               regenera la cabecera de rofi del fondo actual
+    aura guard                  el demonio en primer plano (debug)
+
+  INTEGRACION (dotfiles gh0stzk)
+    aura install                crea el symlink bin/Aura y avisa de que tocar
+    aura uninstall              para todo y borra el symlink
+
+  Variables de entorno que ganan a aura.conf:
+    THEME=0 aura start          arranca sin tocar ningun color
+    AURA_LIST_MAX=20 aura switcher
+EOF
+}
+
+# ── Comandos ─────────────────────────────────────────────────
+aura_guard_theme_mode() {
+    # THEME con el que arranco el guard que hay corriendo ahora mismo
+    local pid env
+    pid=$(cat "$AURA_RUNTIME/guard.pid" 2>/dev/null) || return 1
+    [[ -n $pid && -r /proc/$pid/environ ]] || return 1
+    env=$(tr '\0' '\n' </proc/"$pid"/environ 2>/dev/null | sed -n 's/^THEME=//p')
+    [[ -n $env ]] || env=1   # si no vino en el entorno, aura.conf decidio
+    printf '%s\n' "$env"
+}
+
+aura_cmd_start() {
+    local file=${1:-}
+    aura_init_dirs
+
+    # El guard hereda THEME del proceso que lo arranca. Si alguien lanzo
+    # "THEME=0 Theme.sh", el guard queda sin temar para siempre y un
+    # "aura start" normal se lo encontraria ahi y no temaria nunca. Si no
+    # coincide con lo que pide esta llamada, se cambia.
+    if aura_daemon_running; then
+        local want=${THEME:-1} have
+        have=$(aura_guard_theme_mode)
+        if [[ $have != "$want" ]]; then
+            aura_log "el guard esta con THEME=$have, esta llamada pide THEME=$want; lo reinicio"
+            aura_cmd_stop >/dev/null 2>&1
+        fi
+    fi
+
+    if aura_daemon_running; then
+        aura_log "el guard ya esta activo"
+    else
+        setsid "$0" guard >"$AURA_RUNTIME/guard.out" 2>&1 &
+        disown 2>/dev/null || true
+        local i
+        for i in {1..30}; do
+            aura_daemon_running && break
+            sleep 0.05
+        done
+        aura_daemon_running || aura_warn "el guard no arranco (mira $AURA_RUNTIME/guard.out)"
+    fi
+
+    if [[ -n $file ]]; then
+        aura_apply "$file"
+    else
+        # un monitor desconectado mientras no mictaba no lo detecta nadie mas:
+        # sus restos se limpian aqui antes de arrancar lo que falte
+        aura_engine_reap_gone
+        # solo arranca lo que falte: no reinicia un fondo sano
+        local mon pid
+        while read -r mon _; do
+            aura_engine_alive "$mon" || aura_engine_start "" "$mon"
+        done < <(aura_monitors)
+        (( ${THEME:-1} )) && {
+            local first
+            first=$(aura_get_state "$(aura_monitor_names | head -1)" file)
+            [[ -n $first ]] && aura_theme_apply "$first" || true
+        }
+    fi
+    return 0
+}
+
+aura_cmd_stop() {
+    aura_init_dirs
+    local pid
+    pid=$(cat "$AURA_RUNTIME/guard.pid" 2>/dev/null)
+    if [[ -n $pid ]] && aura_alive "$pid"; then
+        kill -TERM "$pid" 2>/dev/null
+        local i
+        for i in {1..30}; do
+            aura_alive "$pid" || break
+            sleep 0.1
+        done
+        aura_alive "$pid" && kill -KILL "$pid" 2>/dev/null
+    fi
+    rm -f "$AURA_RUNTIME/guard.pid"
+    aura_engine_stop "${1:-}"
+    aura_log "fondo detenido"
+    return 0
+}
+
+aura_cmd_screen() {
+    aura_init_dirs
+    case ${1:-} in
+        ""|--list|-l)
+            printf '\n\033[1maura\033[0m — fondo por monitor\n\n'
+            local mapped cur label
+            while read -r mon geo; do
+                mapped=$(aura_map_get "$mon" 2>/dev/null)
+                cur=$(aura_get_state "$mon" file)
+                if [[ -n $mapped ]]; then
+                    label=$mapped
+                elif [[ -n $cur ]]; then
+                    label=$cur
+                else
+                    label='(sin archivo)'
+                fi
+                printf '  \033[38;5;141m%s\033[0m %-14s %s\n' "$mon" "$geo" "$label"
+            done < <(aura_monitors)
+            printf '\n'
+            ;;
+        --paths)
+            # "MON<TAB>ruta" por monitor, sin adornos: para scripts.
+            # Solo los monitores con el motor en marcha: si aura esta parado
+            # el wallpaper ya es otro y no tenemos nada que decir.
+            local mon f
+            while read -r mon _; do
+                aura_engine_alive "$mon" || continue
+                f=$(aura_map_get "$mon" 2>/dev/null) || f=
+                [[ -z $f ]] && f=$(aura_get_state "$mon" file)
+                [[ -n $f && -f $f ]] && printf '%s\t%s\n' "$mon" "$f"
+            done < <(aura_monitors)
+            ;;
+        *)
+            local mon=$1 file=${2:-}
+            aura_monitors | grep -q "^$mon " || aura_die "no existe el monitor $mon"
+            if [[ $file == --clear ]]; then
+                aura_map_del "$mon"
+                aura_log "$mon: sin fondo fijo (se usara el ultimo aplicado)"
+            elif [[ -n $file ]]; then
+                [[ -f $file ]] || aura_die "no existe $file"
+                aura_apply "$file" "$mon"
+            else
+                aura_die "uso: aura screen <MON> <archivo|--clear>"
+            fi
+            ;;
+    esac
+}
+
+aura_cmd_pool() {
+    local kind=${1:-$KIND}
+    local n=0 f
+    while IFS= read -r f; do
+        printf '  %s\n' "$f"
+        ((n++))
+    done < <(aura_pool_files_kind "$kind")
+    printf '\033[2m  %d archivos (%s)\033[0m\n' "$n" "$kind"
+}
+
+aura_cmd_theme() {
+    aura_init_dirs
+    case ${1:-} in
+        --reset)
+            aura_theme_reset
+            return 0
+            ;;
+        --reapply)
+            # otro script ha reescrito un fichero de los que toca aura
+            # (Theme.sh -> 04-rofi.sh): se vuelve a volcar la paleta guardada
+            aura_theme_reapply || aura_die "no hay ningun acento guardado que reaplicar"
+            return 0
+            ;;
+    esac
+    local file=${1:-}
+    if [[ -z $file ]]; then
+        local mon
+        mon=$(aura_theme_source_monitor)
+        file=$(aura_get_state "$mon" file)
+    fi
+    [[ -n $file && -f $file ]] || aura_die "no hay ningun fondo en marcha"
+    aura_theme_apply "$file" "$(aura_label "$file")"
+    local p=$AURA_RUNTIME/accent
+    [[ -r $p ]] && cat "$p"
+}
+
+aura_cmd_wallsync() {
+    # Regenera lo que WallSync deja para el resto de la rice
+    # (~/.cache/current_wall y la cabecera de rofi) a partir del fondo
+    # actual. WallSync lo llama para no tener dos implementaciones.
+    local f
+    f=$(aura_current_file) || aura_die "aura no tiene ningun fondo en marcha"
+    aura_wallsync "$f" || aura_die "no se pudo generar el frame de ${f##*/}"
+    aura_log "cabecera de rofi al día (${f##*/})"
+}
+
+aura_cmd_fetch() {
+    local url=$1
+    local target=${2:-}
+    [[ -z $url ]] && aura_die "uso: aura fetch <URL> [TARGET]"
+    aura_init_dirs
+    
+    local pool_dir
+    pool_dir=$(aura_pool_dirs | head -1)
+    [[ -z $pool_dir ]] && aura_die "no hay directorios de POOL configurados"
+    mkdir -p "$pool_dir" 2>/dev/null
+    
+    aura_log "descargando a $pool_dir..."
+    local file
+    
+    if command -v yt-dlp >/dev/null && [[ $url == *"youtube.com"* || $url == *"youtu.be"* ]]; then
+        file=$(yt-dlp -f "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" --get-filename -o "$pool_dir/%(title)s.%(ext)s" "$url" 2>/dev/null)
+        yt-dlp -f "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best" -o "$pool_dir/%(title)s.%(ext)s" "$url"
+    else
+        # Guardar en la carpeta destino conservando el nombre original del archivo (header Content-Disposition)
+        cd "$pool_dir" || aura_die "No se pudo acceder a $pool_dir"
+        curl -s -L -J -O "$url"
+        # El archivo más reciente modificado en esta carpeta es el que acabamos de descargar
+        local filename
+        filename=$(ls -t | head -1)
+        file="$pool_dir/$filename"
+        cd - >/dev/null || true
+    fi
+    
+    [[ -f $file ]] || aura_die "error al descargar"
+    aura_log "descarga completada: ${file##*/}"
+    
+    # Generar miniatura en background para el menú
+    aura_thumb "$file" >/dev/null &
+    
+    # Aplicarlo directamente
+    aura_apply "$file" "$target"
+}
+
+aura_cmd_install() {
+    local bindir=$HOME/.config/bspwm/bin
+    mkdir -p "$bindir" || aura_die "no se pudo crear $bindir"
+    local link=$bindir/Aura
+    if [[ -L $link || -e $link ]]; then
+        rm -f "$link"
+    fi
+    ln -s "$0" "$link" && aura_log "creado $link"
+    aura_init_dirs
+    aura_thumbs_gc
+    cat <<EOF
+
+  Ya puedes llamar a \`Aura\` desde sxhkd como cualquier otro bin de tu rice.
+  Para que arranque con la sesion, en la rice activa:
+
+      ENGINE="Aura"
+
+  y en ~/.config/bspwm/bin/Theme.sh, el bloque que mata xwinwrap:
+
+      aura stop
+EOF
+}
+
+aura_cmd_uninstall() {
+    aura_cmd_stop
+    rm -f "$HOME/.config/bspwm/bin/Aura"
+    aura_theme_reset || true
+    aura_log "desinstalado (config en $AURA_HOME intacta)"
+}
+
+# ── Main ─────────────────────────────────────────────────────
+main() {
+    aura_load_conf
+    local cmd=${1:-help}
+    shift 2>/dev/null || true
+    case $cmd in
+        start|restart) aura_cmd_start "$@" ;;
+        stop) aura_cmd_stop "$@" ;;
+        apply) aura_apply "${1:-}" "${2:-}" ;;
+        control) aura_cmd_control "$@" ;;
+        switcher) nohup ~/.local/bin/aura-studio >/dev/null 2>&1 & ;;
+        next) aura_step_apply next ;;
+        prev) aura_step_apply prev ;;
+        pause) aura_engine_pause on ;;
+        resume) aura_engine_pause off ;;
+        toggle-pause|toggle) aura_engine_pause toggle ;;
+        status) aura_engine_status ;;
+        screen) aura_cmd_screen "$@" ;;
+        pool) aura_cmd_pool "$@" ;;
+        fetch) aura_cmd_fetch "$@" ;;
+        theme) aura_cmd_theme "$@" ;;
+        wallsync) aura_cmd_wallsync "$@" ;;
+        guard) aura_guard_run ;;
+        install) aura_cmd_install ;;
+        uninstall) aura_cmd_uninstall ;;
+        version|-v|--version) printf 'aura %s\n' "$AURA_VERSION" ;;
+        help|-h|--help) aura_help ;;
+        *) aura_help; aura_die "comando desconocido: $cmd" ;;
+    esac
+}
+
+main "$@"
