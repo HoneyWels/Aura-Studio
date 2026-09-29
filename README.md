@@ -1,7 +1,6 @@
 # Aura Studio v1.0 🌌
 A lightweight, open-source Animated Wallpaper Engine for X11 Window Managers (BSPWM, i3, Awesome, etc.) with Live Shaders, Multi-Monitor support, and Auto-Theming capabilities.
 
-![Aura Studio](https://raw.githubusercontent.com/gh0stzk/dotfiles/master/misc/preview.png) *(You can replace this image later)*
 
 ## ✨ Features
 * **Online Catalog:** Integrated search and download for MotionBgs and MoeWalls.
