@@ -1463,24 +1463,28 @@ class AuraStudio(QMainWindow):
             from PyQt6.QtGui import QColor
             color = QColorDialog.getColor(QColor(ACCENT), self, "Choose Accent Color")
             if color.isValid():
-                # Disable Auto-Theming so guard doesn't overwrite it
-                conf_set("THEME", "0")
-                # Apply locally
+                # Apply locally regardless of Auto-Theming
                 r, g, b = color.red(), color.green(), color.blue()
-                self.apply_dynamic_theme(r, g, b)
                 
                 # Apply globally via aura
                 hex_c = f"#{r:02x}{g:02x}{b:02x}"
+                dim_hex = f"#{max(0,r-40):02x}{max(0,g-40):02x}{max(0,b-40):02x}"
+                bright_hex = f"#{min(255,r+40):02x}{min(255,g+40):02x}{min(255,b+40):02x}"
                 script = f"""
 source ~/.config/aura/lib/util.sh
 source ~/.config/aura/lib/accent.sh
-hex="{hex_c}"
-dim=$(aura_color_mod "$hex" -20)
-bright=$(aura_color_mod "$hex" 20)
-palette="accent=$hex dim=$dim bright=$bright on=#000000 text=#ffffff"
+palette="accent={hex_c} dim={dim_hex} bright={bright_hex} on=#000000 text=#ffffff"
 aura_theme_write "$palette"
 """
                 subprocess.Popen(["bash", "-c", script])
+                
+                # Disable Auto-Theming AFTER applying so guard doesn't overwrite it
+                conf_set("THEME", "0")
+                
+                # Temporarily bypass the THEME=0 check to update UI
+                conf_set("THEME", "1")
+                self.apply_dynamic_theme(r, g, b)
+                conf_set("THEME", "0")
                 
         self.color_btn.clicked.connect(_pick_color)
         ctrl.addWidget(self.color_btn)
