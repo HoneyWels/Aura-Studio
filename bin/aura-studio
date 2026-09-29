@@ -494,13 +494,47 @@ class LibraryPanel(QWidget):
         layout.setContentsMargins(24, 24, 16, 16)
         layout.setSpacing(16)
 
-        # Header row
         header = QHBoxLayout()
         header.addWidget(section_title("library"))
         header.addStretch()
+        
+        # Folder buttons
+        open_btn = QPushButton("📂")
+        open_btn.setFixedSize(32, 32)
+        open_btn.setToolTip("Open Downloads Folder")
+        open_btn.setStyleSheet("background:transparent; font-size:16px;")
+        open_btn.setCursor(QCursor(HC))
+        def _open_folder():
+            import subprocess
+            d = subprocess.check_output([AURA_BIN, "pool-dirs"]).decode().split('\n')[0].strip()
+            subprocess.Popen(["xdg-open", d])
+        open_btn.clicked.connect(_open_folder)
+        header.addWidget(open_btn)
+        
+        add_btn = QPushButton("➕")
+        add_btn.setFixedSize(32, 32)
+        add_btn.setToolTip("Add Custom Folder")
+        add_btn.setStyleSheet("background:transparent; font-size:14px;")
+        add_btn.setCursor(QCursor(HC))
+        def _add_folder():
+            from PyQt6.QtWidgets import QFileDialog
+            d = QFileDialog.getExistingDirectory(self, "Select Folder to Add to Library")
+            if d:
+                conf = os.path.expanduser("~/.config/aura/aura.conf")
+                with open(conf, "r") as f: txt = f.read()
+                import re
+                txt = re.sub(r'(POOL=\(\n)', r'\1    "' + d + '"\n', txt, count=1)
+                with open(conf, "w") as f: f.write(txt)
+                self.window().start_download("") # Dummy to refresh if needed, but load_wallpapers is better
+                if hasattr(self, "load_wallpapers"): self.load_wallpapers()
+        add_btn.clicked.connect(_add_folder)
+        header.addWidget(add_btn)
+        
+        header.addSpacing(8)
+        
         self.search_bar = QLineEdit()
         self.search_bar.setPlaceholderText("search wallpapers…")
-        self.search_bar.setFixedWidth(220)
+        self.search_bar.setFixedWidth(200)
         self.search_bar.setFixedHeight(32)
         self.search_bar.textChanged.connect(self.filter_cards)
         header.addWidget(self.search_bar)
@@ -689,17 +723,11 @@ class ExplorePanel(QWidget):
         self.provider_cb.setStyleSheet(cb_style)
         self.res_cb.setStyleSheet(cb_style)
         
-        def _on_provider_change():
-            # Show res_cb only for Wallhaven
-            self.res_cb.setVisible("Wallhaven" in self.provider_cb.currentText())
-            self.load_category(self.url_input.text().strip())
-            
-        self.provider_cb.currentIndexChanged.connect(_on_provider_change)
+        self.provider_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
         self.res_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
         
         header.addWidget(self.provider_cb)
         header.addWidget(self.res_cb)
-        self.res_cb.setVisible(False)
 
         self.url_input = QLineEdit()
         self.url_input.setPlaceholderText("Search or paste URL…")
@@ -793,7 +821,8 @@ class ExplorePanel(QWidget):
         self.status_lbl.setText("⏳  LOADING CATALOG…")
         
         provider = self.provider_cb.currentText()
-        threading.Thread(target=self._scrape, args=(provider, tag), daemon=True).start()
+        res_idx = self.res_cb.currentIndex()
+        threading.Thread(target=self._scrape, args=(provider, tag, res_idx), daemon=True).start()
 
     def show_next_batch(self):
         batch = self._all_items[self._shown : self._shown + self._batch]
@@ -806,19 +835,27 @@ class ExplorePanel(QWidget):
             f"✓  {self._shown} / {len(self._all_items)} LOADED")
         self.more_btn.setVisible(self._shown < len(self._all_items))
 
-    def _scrape(self, provider, tag):
+    def _scrape(self, provider, tag, res_idx=0):
         import urllib.request, re, urllib.parse
         try:
             items = []
             seen = set()
             headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"}
             
+            res_str = ""
+            if res_idx == 1: res_str = "1080p"
+            elif res_idx == 2: res_str = "1440p"
+            elif res_idx == 3: res_str = "4k"
+            
             if provider == "MotionBgs":
                 base = "https://motionbgs.com"
-                if tag and not tag.startswith("tag:"):
-                    path = f"/search?q={urllib.parse.quote(tag)}"
+                query = tag.replace("tag:", "") if tag else ""
+                if res_str: query = f"{query} {res_str}".strip()
+                
+                if query:
+                    path = f"/search?q={urllib.parse.quote(query)}"
                 else:
-                    path = f"/{tag}/" if tag else "/"
+                    path = "/"
                     
                 req  = urllib.request.Request(base + path, headers=headers)
                 html = urllib.request.urlopen(req, timeout=12).read().decode("utf-8", errors="replace")
@@ -837,11 +874,13 @@ class ExplorePanel(QWidget):
                         
             elif provider == "MoeWalls":
                 base = "https://moewalls.com"
-                if not tag:
+                query = tag.replace("tag:", "") if tag else ""
+                if res_str: query = f"{query} {res_str}".strip()
+                
+                if not query:
                     base_path = "/"
                 else:
-                    clean_tag = tag.replace("tag:", "")
-                    base_path = f"/?s={urllib.parse.quote(clean_tag)}"
+                    base_path = f"/?s={urllib.parse.quote(query)}"
                 
                 for p in range(1, 5):
                     if p == 1:
