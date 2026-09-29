@@ -200,8 +200,11 @@ theme_polybar() {
         done <"$cfg" >"$cfg.aura.$$" && mv -f "$cfg.aura.$$" "$cfg"
     done
 
-    if aura_have polybar-msg && pgrep -x polybar >/dev/null 2>&1; then
-        polybar-msg cmd reload >/dev/null 2>&1
+    if pgrep -x polybar >/dev/null 2>&1; then
+        if ! polybar-msg cmd reload >/dev/null 2>&1; then
+            pkill -x polybar
+            bash "$HOME/.config/bspwm/rices/$rice/Bar.bash" >/dev/null 2>&1 &
+        fi
     fi
     return 0
 }

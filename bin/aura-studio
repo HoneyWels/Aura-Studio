@@ -1638,7 +1638,7 @@ try:
         h, l, s = colorsys.rgb_to_hls(c[0]/255, c[1]/255, c[2]/255)
         if l < 0.15: return 0.0   # skip very dark colors
         if l > 0.92: return 0.0   # skip near-white
-        return (s * 0.65) + (l * 1.35)
+        return (s * 1.5) + (l * 0.5)
     best = max(palette, key=score)
     print(f'{{best[0]}} {{best[1]}} {{best[2]}}')
 except Exception as e:
@@ -1688,8 +1688,9 @@ try:
     palette = ColorThief('{jpg_path}').get_palette(color_count=6, quality=10)
     def score(c):
         h, l, s = colorsys.rgb_to_hls(c[0]/255, c[1]/255, c[2]/255)
-        if l < 0.2: l = 0.0
-        return (s * 0.7) + (l * 1.3)
+        if l < 0.15: return 0.0
+        if l > 0.92: return 0.0
+        return (s * 1.5) + (l * 0.5)
     best = max(palette, key=score)
     print(f'{{best[0]}} {{best[1]}} {{best[2]}}')
 except Exception:
@@ -1706,10 +1707,13 @@ except Exception:
     # CRITICAL: Use findChild to update only specific containers.
     # self.setStyleSheet(global_qss) with hundreds of cards = app freeze.
     def apply_dynamic_theme(self, r, g, b):
+        if not int(conf_get("THEME", "0")):
+            return
+            
         global ACCENT
         acc = '#{:02x}{:02x}{:02x}'.format(r, g, b)
         ACCENT = acc
-
+        
         dynamic_bg = conf_get("DYNAMIC_BG", "1") == "1"
 
         if dynamic_bg:
