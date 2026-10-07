@@ -17,7 +17,7 @@ try:
                                  QPushButton, QLabel, QScrollArea, QLineEdit, QGridLayout,
                                  QFrame, QStackedWidget, QSizePolicy, QCheckBox, QButtonGroup,
                                  QTextEdit, QSpacerItem, QSlider, QComboBox)
-    from PyQt6.QtCore import Qt, QPoint, QSize, pyqtSignal, QTimer, QtMsgType
+    from PyQt6.QtCore import Qt, QPoint, QSize, pyqtSignal, QTimer, QtMsgType, QObject, QRunnable, QThreadPool
     from PyQt6.QtGui import QCursor, QColor, QFont
     import PyQt6.QtCore as _qcore
 
@@ -38,7 +38,7 @@ except ImportError:
                                  QPushButton, QLabel, QScrollArea, QLineEdit, QGridLayout,
                                  QFrame, QStackedWidget, QSizePolicy, QCheckBox, QButtonGroup,
                                  QTextEdit, QSpacerItem, QSlider, QComboBox)
-    from PyQt5.QtCore import Qt, QPoint, QSize, pyqtSignal, QTimer
+    from PyQt5.QtCore import Qt, QPoint, QSize, pyqtSignal, QTimer, QObject, QRunnable, QThreadPool
     from PyQt5.QtGui import QCursor, QColor, QFont
     AF   = Qt
     LB   = Qt.LeftButton
@@ -46,12 +46,110 @@ except ImportError:
     HC   = Qt.PointingHandCursor
     NoFocus = Qt.NoFocus
 
-WALL_DIR  = os.path.expanduser("~/.config/bspwm/rices/wels/walls")
+def get_current_rice():
+    try:
+        with open(os.path.expanduser("~/.config/bspwm/.rice"), "r") as f:
+            return f.read().strip()
+    except Exception:
+        return "varinka"
+
+WALL_DIR  = os.path.expanduser(f"~/.config/bspwm/rices/{get_current_rice()}/walls")
 CONF_PATH = os.path.expanduser("~/.config/aura/aura.conf")
-AURA_BIN  = os.path.expanduser("~/.local/bin/aura")
+import shutil
+AURA_BIN = shutil.which("aura") or os.path.expanduser("~/.local/bin/aura")
 
 # ─── Accent color base (purple, updated dynamically) ───
 ACCENT    = "#cba6f7"
+
+# ── App Themes ────────────────────────────────────────────────────────────────
+APP_THEMES = {
+    "Vellum (Default)": {
+        "accent": "#ff5168", "accent_dim": "#5b0015",
+        "bg": "#0e0e13", "sidebar": "rgba(42,41,47,0.85)",
+        "card_bg": "rgba(27,27,32,0.75)", "on_surface": "#e4e1e9", "surface_variant": "#e7bcbd",
+    },
+    "Catppuccin Mocha": {
+        "accent": "#cba6f7", "accent_dim": "#1e1e2e",
+        "bg": "#1e1e2e", "sidebar": "rgba(24,24,37,0.9)",
+        "card_bg": "rgba(30,30,46,0.8)", "on_surface": "#cdd6f4", "surface_variant": "#a6adc8",
+    },
+    "Tokyo Night": {
+        "accent": "#7aa2f7", "accent_dim": "#1a1b26",
+        "bg": "#1a1b26", "sidebar": "rgba(22,22,33,0.9)",
+        "card_bg": "rgba(26,27,38,0.85)", "on_surface": "#c0caf5", "surface_variant": "#565f89",
+    },
+    "Gruvbox Dark": {
+        "accent": "#fabd2f", "accent_dim": "#282828",
+        "bg": "#282828", "sidebar": "rgba(29,32,33,0.9)",
+        "card_bg": "rgba(40,40,40,0.85)", "on_surface": "#ebdbb2", "surface_variant": "#a89984",
+    },
+    "Rose Pine": {
+        "accent": "#eb6f92", "accent_dim": "#191724",
+        "bg": "#191724", "sidebar": "rgba(21,19,34,0.9)",
+        "card_bg": "rgba(25,23,36,0.85)", "on_surface": "#e0def4", "surface_variant": "#908caa",
+    },
+    "Nord": {
+        "accent": "#88c0d0", "accent_dim": "#2e3440",
+        "bg": "#2e3440", "sidebar": "rgba(36,40,49,0.9)",
+        "card_bg": "rgba(46,52,64,0.85)", "on_surface": "#eceff4", "surface_variant": "#d8dee9",
+    },
+    "Dracula": {
+        "accent": "#bd93f9", "accent_dim": "#282a36",
+        "bg": "#282a36", "sidebar": "rgba(33,34,44,0.9)",
+        "card_bg": "rgba(40,42,54,0.85)", "on_surface": "#f8f8f2", "surface_variant": "#6272a4",
+    },
+    "Aura Dark": {
+        "accent": "#a277ff", "accent_dim": "#0d0e0f",
+        "bg": "#0d0e0f", "sidebar": "rgba(15,16,18,0.95)",
+        "card_bg": "rgba(18,19,22,0.85)", "on_surface": "#edecee", "surface_variant": "#6d6d6d",
+    },
+}
+
+def build_theme_stylesheet(name, dynamic_acc=None, dyn_bg=None, dyn_sb=None, dyn_ctrl=None):
+    t = APP_THEMES.get(name, APP_THEMES["Vellum (Default)"])
+    acc = dynamic_acc if dynamic_acc else t["accent"]
+    dim = t["accent_dim"] if not dynamic_acc else "#111111"
+    bg = dyn_bg if dyn_bg else t["bg"]
+    sb = dyn_sb if dyn_sb else t["sidebar"]
+    ctrl = dyn_ctrl if dyn_ctrl else "rgba(0,0,0,0.75)"
+    card = t["card_bg"]
+    txt = t["on_surface"]
+    sv = t["surface_variant"]
+    
+    return f"""
+QMainWindow {{ background: transparent; }}
+QScrollArea {{ background: transparent; border: none; }}
+QScrollArea > QWidget > QWidget {{ background: transparent; }}
+#MainContainer {{ background-color: {bg}; }}
+#Sidebar {{ background-color: {sb}; border-right: 1px solid rgba(255,255,255,10); }}
+#TopBar {{ background-color: rgba(0,0,0,0.35); border-bottom: 1px solid rgba(255,255,255,5); }}
+#FloatingDock {{ background-color: {ctrl}; border: 1px solid rgba(255,255,255,22); border-radius: 26px; }}
+QPushButton[objectName="PlayBtn"] {{ color: {txt}; font-size: 16px; border-radius: 16px; background: transparent; border: none; }}
+QPushButton[objectName="PlayBtn"]:hover {{ background: rgba(255,255,255,20); }}
+QLineEdit#SearchBar {{ background: rgba(255,255,255,8); color: {txt}; border: none; border-radius: 16px; padding: 6px 16px; font-size: 13px; }}
+QLineEdit#SearchBar:focus {{ background: rgba(255,255,255,14); }}
+#Logo {{ color: {txt}; font-size: 20px; font-weight: bold; }}
+#LogoSub {{ color: {acc}; font-family: 'JetBrains Mono',monospace; font-size: 11px; letter-spacing: 2px; }}
+QPushButton[objectName="NavBtn"] {{ background: transparent; color: {sv}; font-size: 14px; text-align: left; padding: 10px 16px; border: none; border-radius: 8px; margin: 2px 16px; }}
+QPushButton[objectName="NavBtn"]:hover {{ background: rgba(255,255,255,8); color: {txt}; }}
+QPushButton[objectName="NavBtn"]:checked {{ background: transparent; color: {acc}; border-left: 2px solid {acc}; font-weight: bold; }}
+QPushButton[objectName="TagPill"] {{ background: rgba(255,255,255,8); color: {txt}; border-radius: 12px; padding: 4px 12px; font-size: 11px; border: none; }}
+QPushButton[objectName="TagPill"]:hover {{ background: rgba(255,255,255,14); }}
+QPushButton[objectName="TagPill"]:checked {{ background: {acc}; color: {dim}; font-weight: bold; }}
+QScrollBar:vertical {{ background: transparent; width: 6px; }} QScrollBar::handle:vertical {{ background: rgba(255,255,255,18); border-radius: 3px; min-height: 20px; }} QScrollBar::handle:vertical:hover {{ background: {acc}; }} QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0px; }} QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}
+QPushButton[objectName="ApplyBtn"] {{
+    background-color: transparent; color: {acc};
+    border: 1px solid {acc};
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+    font-size: 11px; font-weight: bold; padding: 5px 12px; letter-spacing: 1px;
+}}
+QPushButton[objectName="ApplyBtn"]:hover {{ background-color: {acc}; color: #0d0d0d; }}
+#Card {{ background: {card}; border-radius: 12px; border: 1px solid transparent; }}
+#Card:hover {{ border: 1px solid {acc}aa; }}
+#CardTitle {{ color: {txt}; font-size: 15px; font-weight: bold; }}
+QLabel {{ color: {txt}; font-family: 'Inter', sans-serif; }}
+"""
 
 FAVS_FILE = os.path.expanduser("~/.config/aura/favorites.json")
 def load_favs():
@@ -77,229 +175,156 @@ _BG_CTRL    = "rgba(8,8,8,210)"
 STYLESHEET = """
 QMainWindow { background: transparent; }
 
+QScrollArea { background: transparent; border: none; }
+QScrollArea > QWidget > QWidget { background: transparent; }
+
+
 #MainContainer {
-    background-color: rgba(13,13,13,220);
+    background-color: #0e0e13;
 }
 
 #Sidebar {
-    background-color: rgba(8,8,8,210);
-    border-right: 1px solid rgba(255,255,255,8);
+    background-color: rgba(42, 41, 47, 0.8);
+    border-right: 1px solid rgba(255,255,255,10);
 }
 
-#ControlBar {
-    background-color: rgba(8,8,8,210);
+#TopBar {
+    background-color: rgba(14, 14, 19, 0.7);
+    border-bottom: 1px solid rgba(255,255,255,5);
+}
+
+#FloatingDock {
+    background-color: rgba(14, 14, 19, 0.85);
+    border: 1px solid rgba(255,255,255,25);
+    border-radius: 26px;
+}
+
+
+QPushButton[objectName="PlayBtn"] {
+    color: #e4e1e9;
+    font-size: 16px;
+    background: transparent;
+    border-radius: 16px;
+    border: none;
+}
+QPushButton[objectName="PlayBtn"]:hover {
+    background: rgba(255,255,255,20);
+}
+#DockPlayBtn:hover {
+    background-color: #ff7588;
+}
+
+/* ── Search Bar ── */
+QLineEdit#SearchBar {
+    background-color: rgba(27, 27, 32, 0.8);
+    color: #e4e1e9;
+    border: none;
+    border-radius: 16px;
+    padding: 6px 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 13px;
+}
+QLineEdit#SearchBar:focus {
+    background-color: #35343a;
 }
 
 /* ── Logo ── */
 #Logo {
-    color: #ffffff;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 13px;
+    color: #e4e1e9;
+    font-family: 'Geist', 'Inter', sans-serif;
+    font-size: 20px;
     font-weight: bold;
-    letter-spacing: 4px;
+    letter-spacing: 1px;
 }
-
 #LogoSub {
-    color: #333333;
+    color: #ff5168;
     font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 2px;
 }
 
 /* ── Nav buttons ── */
 QPushButton[objectName="NavBtn"] {
     background: transparent;
-    color: #444444;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 12px;
-    font-weight: bold;
+    color: #e7bcbd;
+    font-family: 'Inter', sans-serif;
+    font-size: 14px;
     text-align: left;
     padding: 10px 16px;
     border: none;
-    border-radius: 0px;
-    letter-spacing: 1px;
+    border-radius: 8px;
+    margin: 2px 16px;
 }
 QPushButton[objectName="NavBtn"]:hover {
-    background-color: #111111;
-    color: #888888;
+    background-color: #35343a;
+    color: #e4e1e9;
 }
 QPushButton[objectName="NavBtn"]:checked {
-    background-color: #111111;
-    color: #888888;
-    border-left: 2px solid #888888;
+    background-color: transparent;
+    color: #ff5168;
+    border-left: 2px solid #ff5168;
+    font-weight: bold;
 }
 
-/* ── Tab buttons ── */
-QPushButton[objectName="TabBtn"] {
-    background: transparent;
-    color: #333333;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
+/* ── Tags / Pills ── */
+QPushButton[objectName="TagPill"] {
+    background-color: #35343a;
+    color: #e4e1e9;
+    border-radius: 12px;
+    padding: 4px 12px;
+    font-family: 'JetBrains Mono', monospace;
     font-size: 11px;
-    font-weight: bold;
     border: none;
-    padding: 5px 14px;
-    border-radius: 0px;
-    letter-spacing: 1px;
 }
-QPushButton[objectName="TabBtn"]:checked {
-    color: #cba6f7;
-    border-bottom: 1px solid #cba6f7;
+QPushButton[objectName="TagPill"]:hover {
+    background-color: #39383e;
 }
-QPushButton[objectName="TabBtn"]:hover {
-    color: #888888;
+
+/* ── ScrollBar ── */
+QScrollBar:vertical {
+    background: transparent;
+    width: 6px;
+    margin: 0px;
 }
+QScrollBar::handle:vertical {
+    background: #35343a;
+    border-radius: 3px;
+    min-height: 20px;
+}
+QScrollBar::handle:vertical:hover {
+    background: #ff5168;
+}
+QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0px; }
+QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }
 
 /* ── Action buttons (Apply / Download) ── */
 QPushButton[objectName="ApplyBtn"] {
-    background-color: transparent;
-    color: #cba6f7;
-    border: 1px solid #cba6f7;
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 11px;
+    background-color: #ff5168;
+    color: #5b0015;
+    border: none;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 12px;
     font-weight: bold;
-    padding: 5px 12px;
-    letter-spacing: 1px;
+    padding: 8px 16px;
 }
 QPushButton[objectName="ApplyBtn"]:hover {
-    background-color: #cba6f7;
-    color: #0d0d0d;
+    background-color: #ff7588;
 }
 
-/* ── Delete button ── */
-QPushButton[objectName="TrashBtn"] {
-    background-color: transparent;
-    color: #333333;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    font-size: 13px;
-    padding: 4px;
-}
-QPushButton[objectName="TrashBtn"]:hover {
-    border-color: #f38ba8;
-    color: #f38ba8;
-}
-
-/* ── Scale mode buttons ── */
-QPushButton[objectName="ScaleBtn"] {
-    background-color: transparent;
-    color: #333333;
-    border: 1px solid #1a1a1a;
-    border-radius: 3px;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 11px;
-    padding: 5px 12px;
-    letter-spacing: 1px;
-}
-QPushButton[objectName="ScaleBtn"]:checked {
-    background-color: transparent;
-    color: #cba6f7;
-    border-color: #cba6f7;
-    font-weight: bold;
-}
-QPushButton[objectName="ScaleBtn"]:hover {
-    color: #888888;
-    border-color: #333333;
-}
-
-/* ── Playback buttons ── */
-QPushButton[objectName="PlayBtn"] {
-    background-color: transparent;
-    color: #333333;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    font-size: 14px;
-    padding: 0px;
-}
-QPushButton[objectName="PlayBtn"]:hover {
-    border-color: #cba6f7;
-    color: #cba6f7;
-}
-QPushButton[objectName="StopBtn"] {
-    background-color: transparent;
-    color: #333333;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    font-size: 14px;
-    padding: 0px;
-}
-QPushButton[objectName="StopBtn"]:hover {
-    border-color: #f38ba8;
-    color: #f38ba8;
-}
-
-/* ── Inputs ── */
-QLineEdit {
-    background-color: #080808;
-    border: 1px solid #1a1a1a;
-    border-radius: 4px;
-    padding: 8px 14px;
-    color: #888888;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 12px;
-}
-QLineEdit:focus {
-    border-color: #cba6f7;
-    color: #cccccc;
-}
-QLineEdit::placeholder {
-    color: #2a2a2a;
-}
-
-/* ── Cards ── */
+/* ── Wallpaper Card ── */
 #Card {
-    background-color: #111111;
-    border-radius: 6px;
-    border: 1px solid #1a1a1a;
+    background-color: rgba(27, 27, 32, 0.7);
+    border-radius: 12px;
+    border: 1px solid transparent;
 }
 #Card:hover {
-    border-color: #cba6f7;
+    border: 1px solid rgba(255,81,104,0.7);
+    background-color: rgba(31, 31, 37, 0.9);
 }
 
-/* ── Monitor card ── */
-#MonitorCard {
-    background-color: #111111;
-    border-radius: 6px;
-    border: 1px solid #222222;
-}
-
-/* ── Settings row ── */
-#SettingRow {
-    background-color: #111111;
-    border-radius: 4px;
-    border: 1px solid #1a1a1a;
-}
-
-/* ── Scrollbars ── */
-QScrollArea { border: none; background: transparent; }
-QScrollBar:vertical {
-    border: none;
-    background: transparent;
-    width: 4px;
-    border-radius: 2px;
-}
-QScrollBar::handle:vertical {
-    background: #222222;
-    border-radius: 2px;
-    min-height: 30px;
-}
-QScrollBar::handle:vertical:hover { background: #cba6f7; }
-QScrollBar:horizontal {
-    border: none;
-    background: transparent;
-    height: 4px;
-    border-radius: 2px;
-}
-QScrollBar::handle:horizontal {
-    background: #222222;
-    border-radius: 2px;
-    min-width: 30px;
-}
-QScrollBar::handle:horizontal:hover { background: #cba6f7; }
-QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
-
-QCheckBox { color: #666666; font-size: 12px; }
-QCheckBox::indicator { width: 0; height: 0; }
+/* ── Generic Labels ── */
+QLabel { color: #e4e1e9; font-family: 'Inter', sans-serif; }
 """
 
 # ─────────────────────────────────────────────── helpers ───
@@ -330,7 +355,7 @@ def mono_lbl(text, color="#444444", size=11, spacing=1):
 def section_title(text):
     lbl = QLabel(text.upper())
     lbl.setStyleSheet(
-        "color:#222222; font-family:'JetBrains Mono','Fira Mono',monospace;"
+        "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace;"
         "font-size:10px; letter-spacing:3px; font-weight:bold;")
     return lbl
 
@@ -342,6 +367,27 @@ def accent_btn(text, name="ApplyBtn"):
     return btn
 
 # ─────────────────────────────────────────────── Toggle ───
+def apply_top_rounded_mask(px, radius=12):
+    try:
+        from PyQt6.QtGui import QPixmap, QPainter, QPainterPath, QColor
+        from PyQt6.QtCore import Qt
+    except ImportError:
+        from PyQt5.QtGui import QPixmap, QPainter, QPainterPath, QColor
+        from PyQt5.QtCore import Qt
+    target = QPixmap(px.size())
+    target.fill(Qt.GlobalColor.transparent if hasattr(Qt, 'GlobalColor') else Qt.transparent)
+    painter = QPainter(target)
+    try:
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+    except:
+        painter.setRenderHint(QPainter.Antialiasing)
+    path = QPainterPath()
+    path.addRoundedRect(0, 0, px.width(), px.height() + radius, radius, radius)
+    painter.setClipPath(path)
+    painter.drawPixmap(0, 0, px)
+    painter.end()
+    return target
+
 class ToggleSwitch(QWidget):
     toggled = pyqtSignal(bool)
     def __init__(self, initial=False, parent=None):
@@ -378,74 +424,139 @@ class ToggleSwitch(QWidget):
 
 # ─────────────────────────────────────────────── CARDS ───
 class WallpaperCard(QFrame):
-    def __init__(self, video_path, parent=None):
+    def __init__(self, video_path, panel=None, parent=None):
         super().__init__(parent)
+        self.panel = panel
         self.setObjectName("Card")
         self.video_path = video_path
-        self.setFixedSize(240, 220)
+        is_video = video_path.lower().endswith((".mp4", ".webm", ".mkv"))
+        self.setFixedSize(268, 230)
+        self.setCursor(QCursor(HC))
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(8, 8, 8, 10)
-        layout.setSpacing(8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
 
-        jpg_path = video_path.replace(".mp4", ".jpg")
+        # ── Thumbnail (16:9) ──────────────────────────────────────────────
+        thumb_container = QFrame()
+        thumb_container.setFixedSize(268, 151)
+        thumb_container.setStyleSheet("background: #1b1b20; border-radius: 12px 12px 0 0;")
+        tc_lay = QVBoxLayout(thumb_container)
+        tc_lay.setContentsMargins(0, 0, 0, 0)
+
+        jpg_path = video_path.replace(".mp4", ".jpg").replace(".webm", ".jpg").replace(".mkv", ".jpg") if is_video else video_path
         self.thumb = QLabel()
-        self.thumb.setFixedSize(224, 126)
-        self.thumb.setStyleSheet("border-radius: 4px; background-color: #111111;")
+        self.thumb.setFixedSize(268, 151)
+        self.thumb.setAlignment(AF.AlignCenter)
+        self.thumb.setStyleSheet("background: transparent; border: none;")
         if os.path.exists(jpg_path):
-            self.thumb.setStyleSheet(
-                f"border-image: url('{jpg_path}') 0 0 0 0 stretch stretch; border-radius: 4px;")
-        layout.addWidget(self.thumb)
+            if hasattr(panel, "request_thumb"):
+                panel.request_thumb(jpg_path, self)
+            else:
+                try:
+                    from PyQt6.QtGui import QImageReader
+                    from PyQt6.QtCore import QSize
+                    from PyQt6.QtGui import QPixmap
+                except:
+                    from PyQt5.QtGui import QImageReader
+                    from PyQt5.QtCore import QSize
+                    from PyQt5.QtGui import QPixmap
+                reader = QImageReader(jpg_path)
+                reader.setScaledSize(QSize(268, 151))
+                img = reader.read()
+                pm = QPixmap.fromImage(img)
+                pm = apply_top_rounded_mask(pm)
+                self.thumb.setPixmap(pm)
+
+        tc_lay.addWidget(self.thumb)
+
+        # Top badges overlay (stacked on thumbnail)
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(8, 8, 8, 0)
+        badge_row.setSpacing(4)
+
+        if is_video:
+            b_live = QLabel("● LIVE")
+            b_live.setStyleSheet("background: rgba(14,14,19,0.85); color:#ff5168; border-radius: 10px; padding: 2px 8px; font-family: 'JetBrains Mono',monospace; font-size:10px; font-weight:bold;")
+        else:
+            b_live = QLabel("◆ STATIC")
+            b_live.setStyleSheet("background: rgba(14,14,19,0.85); color:#00dbe9; border-radius: 10px; padding: 2px 8px; font-family: 'JetBrains Mono',monospace; font-size:10px; font-weight:bold;")
+        badge_row.addWidget(b_live)
+        badge_row.addStretch()
+
+        try:
+            size_mb = os.path.getsize(video_path) / (1024*1024)
+            b_size = QLabel(f"{size_mb:.0f}MB")
+        except:
+            b_size = QLabel("?MB")
+        b_size.setStyleSheet("background: rgba(14,14,19,0.85); color:#e7bcbd; border-radius: 10px; padding: 2px 8px; font-family: 'JetBrains Mono',monospace; font-size:10px;")
+        badge_row.addWidget(b_size)
+
+        # Overlay widget to position badges on top of thumb
+        overlay = QWidget(thumb_container)
+        overlay.setGeometry(0, 0, 268, 151)
+        overlay.setStyleSheet("background: transparent;")
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        overlay_lay = QVBoxLayout(overlay)
+        overlay_lay.setContentsMargins(0, 0, 0, 0)
+        overlay_lay.addLayout(badge_row)
+        overlay_lay.addStretch()
+
+        outer.addWidget(thumb_container)
+
+        # ── Metadata strip ────────────────────────────────────────────────
+        meta = QFrame()
+        meta.setStyleSheet("background: rgba(27,27,32,0.9); border-radius: 0 0 12px 12px;")
+        meta_lay = QVBoxLayout(meta)
+        meta_lay.setContentsMargins(12, 10, 12, 10)
+        meta_lay.setSpacing(6)
 
         filename = os.path.basename(video_path)
-        title = filename.replace(".mp4", "").replace("-", " ").replace(".", " ").title()
-        if len(title) > 24: title = title[:21] + "…"
-        try: size_mb = os.path.getsize(video_path) / (1024*1024)
-        except: size_mb = 0.0
+        title = filename.replace(".mp4","").replace(".webm","").replace(".mkv","").replace("-"," ").replace("."," ").title()
+        if len(title) > 26: title = title[:23] + "…"
 
-        info = QHBoxLayout()
+        title_row = QHBoxLayout()
         t = QLabel(title)
-        t.setStyleSheet(
-            "color:#cccccc; font-family:'JetBrains Mono','Fira Mono',monospace;"
-            "font-size:11px; font-weight:bold;")
-        s = QLabel(f"{size_mb:.1f}mb")
-        s.setStyleSheet(
-            "color:#333333; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
-        
-        self.fav_btn = QPushButton("❤" if self.video_path in load_favs() else "♡")
+        t.setObjectName("CardTitle")
+        is_fav = self.video_path in load_favs()
+        self.fav_btn = QPushButton("♥" if is_fav else "♡")
         self.fav_btn.setFixedSize(20, 20)
         self.fav_btn.setFocusPolicy(NoFocus)
         self.fav_btn.setCursor(QCursor(HC))
-        self.fav_btn.setStyleSheet("""
-            QPushButton { background: transparent; color: #555555; border: none; font-size: 13px; }
-            QPushButton:hover { color: #ff4444; }
-        """ if self.video_path not in load_favs() else """
-            QPushButton { background: transparent; color: #ff4444; border: none; font-size: 13px; }
-            QPushButton:hover { color: #ff6666; }
-        """)
+        self.fav_btn.setStyleSheet(
+            "QPushButton { background: transparent; color: #ff5168; border: none; font-size: 14px; }"
+            if is_fav else
+            "QPushButton { background: transparent; color: #5d3f40; border: none; font-size: 14px; }"
+            "QPushButton:hover { color: #ff5168; }"
+        )
         self.fav_btn.clicked.connect(self.on_favorite)
+        title_row.addWidget(t)
+        title_row.addStretch()
+        title_row.addWidget(self.fav_btn)
+        meta_lay.addLayout(title_row)
 
-        info.addWidget(t)
-        info.addStretch()
-        info.addWidget(self.fav_btn)
-        info.addWidget(s)
-        layout.addLayout(info)
-
-        btns = QHBoxLayout()
-        btns.setSpacing(6)
-        apply_btn = accent_btn("▶ APPLY")
+        # Action buttons
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        apply_btn = QPushButton("▶  Apply")
+        apply_btn.setObjectName("ApplyBtn")
+        apply_btn.setFixedHeight(28)
+        apply_btn.setFocusPolicy(NoFocus)
+        apply_btn.setCursor(QCursor(HC))
         apply_btn.clicked.connect(self.on_apply)
 
         trash_btn = QPushButton("✕")
-        trash_btn.setObjectName("TrashBtn")
         trash_btn.setFixedSize(28, 28)
         trash_btn.setFocusPolicy(NoFocus)
         trash_btn.setCursor(QCursor(HC))
+        trash_btn.setStyleSheet("background: rgba(255,255,255,5); color: #5d3f40; border: none; border-radius: 6px; font-size:13px;")
         trash_btn.clicked.connect(self.on_delete)
 
-        btns.addWidget(apply_btn)
-        btns.addWidget(trash_btn)
-        layout.addLayout(btns)
+        btn_row.addWidget(apply_btn)
+        btn_row.addWidget(trash_btn)
+        meta_lay.addLayout(btn_row)
+        outer.addWidget(meta)
 
     def on_apply(self):
         main_win = self.window()
@@ -464,6 +575,10 @@ class WallpaperCard(QFrame):
             threading.Thread(
                 target=main_win._run_colorthief, args=(jpg,), daemon=True).start()
 
+
+    def _apply_thumb(self, pm):
+        self.thumb.setPixmap(pm)
+
     def on_favorite(self):
         favs = load_favs()
         if self.video_path in favs:
@@ -477,12 +592,18 @@ class WallpaperCard(QFrame):
             main_win.load_wallpapers()
 
     def on_delete(self):
-        jpg = self.video_path.replace(".mp4", ".jpg")
+        if self.video_path.lower().endswith((".mp4", ".webm", ".mkv")):
+            jpg = self.video_path.replace(".mp4", ".jpg").replace(".webm", ".jpg").replace(".mkv", ".jpg")
+        else:
+            jpg = self.video_path
         try:
             os.remove(self.video_path)
-            if os.path.exists(jpg): os.remove(jpg)
-            self.setParent(None)
-            self.deleteLater()
+            if os.path.exists(jpg) and jpg != self.video_path: os.remove(jpg)
+            if self.panel:
+                self.panel.remove_card(self)
+            else:
+                self.setParent(None)
+                self.deleteLater()
         except Exception as ex:
             print(f"Error borrando: {ex}")
 
@@ -499,53 +620,34 @@ class LibraryPanel(QWidget):
         header.addStretch()
         
         # Folder buttons
+        refresh_btn = QPushButton("🔄")
+        refresh_btn.setFixedSize(32, 32)
+        refresh_btn.setToolTip("Refresh Library")
+        refresh_btn.setStyleSheet("background:transparent; font-size:16px;")
+        refresh_btn.setCursor(QCursor(HC))
+        def _refresh():
+            for i in reversed(range(self.grid_lay.count())):
+                widget = self.grid_lay.itemAt(i).widget()
+                if widget:
+                    widget.setParent(None)
+                    widget.deleteLater()
+            self.all_cards.clear()
+            self.load_wallpapers()
+        refresh_btn.clicked.connect(_refresh)
+        header.addWidget(refresh_btn)
+
         open_btn = QPushButton("📂")
         open_btn.setFixedSize(32, 32)
-        open_btn.setToolTip("Open Downloads Folder")
+        open_btn.setToolTip("Open Global WelsPapers Folder")
         open_btn.setStyleSheet("background:transparent; font-size:16px;")
         open_btn.setCursor(QCursor(HC))
         def _open_folder():
             import subprocess
-            d = subprocess.check_output([AURA_BIN, "pool-dirs"]).decode().split('\n')[0].strip()
-            subprocess.Popen(["xdg-open", d])
+            subprocess.Popen(["xdg-open", WALL_DIR])
         open_btn.clicked.connect(_open_folder)
         header.addWidget(open_btn)
+        # Removed add button to prevent aura.conf corruption
         
-        add_btn = QPushButton("➕")
-        add_btn.setFixedSize(32, 32)
-        add_btn.setToolTip("Add Custom Folder")
-        add_btn.setStyleSheet("background:transparent; font-size:14px;")
-        add_btn.setCursor(QCursor(HC))
-        def _add_folder():
-            from PyQt6.QtWidgets import QFileDialog
-            d = QFileDialog.getExistingDirectory(self, "Select Folder to Add to Library")
-            if d:
-                conf = os.path.expanduser("~/.config/aura/aura.conf")
-                with open(conf, "r") as f: txt = f.read()
-                import re
-                txt = re.sub(r'(POOL=\(\n)', r'\1    "' + d + '"\n', txt, count=1)
-                with open(conf, "w") as f: f.write(txt)
-                self.window().start_download("") # Dummy to refresh if needed, but load_wallpapers is better
-                if hasattr(self, "load_wallpapers"): self.load_wallpapers()
-        add_btn.clicked.connect(_add_folder)
-        header.addWidget(add_btn)
-        
-        header.addSpacing(8)
-        
-        self.search_bar = QLineEdit()
-        self.search_bar.setPlaceholderText("search wallpapers…")
-        self.search_bar.setFixedWidth(200)
-        self.search_bar.setFixedHeight(32)
-        self.search_bar.textChanged.connect(self.filter_cards)
-        header.addWidget(self.search_bar)
-        header.addSpacing(12)
-        for t in ["ALL", "LIVE", "STATIC"]:
-            btn = QPushButton(t)
-            btn.setObjectName("TabBtn")
-            btn.setFocusPolicy(NoFocus)
-            btn.setCheckable(True)
-            if t == "ALL": btn.setChecked(True)
-            header.addWidget(btn)
         layout.addLayout(header)
 
         # Separator
@@ -557,85 +659,215 @@ class LibraryPanel(QWidget):
         # Grid
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        
         self.scroll.setVerticalScrollBarPolicy(SBOff)
         self.scroll.setHorizontalScrollBarPolicy(SBOff)
+        
+        self.thumb_signals = ThumbWorkerSignals()
+        self.thumb_signals.result.connect(self._on_thumb_loaded)
+        self.thread_pool = QThreadPool.globalInstance()
+        self.thumb_reqs = {}
+        self.thumb_cache = {}
+
         self.grid_w = QWidget()
         self.grid_w.setStyleSheet("background: transparent;")
         self.grid_lay = QGridLayout(self.grid_w)
         self.grid_lay.setSpacing(16)
         self.grid_lay.setAlignment(AF.AlignTop | AF.AlignLeft)
         self.all_cards = []
+        self._current_filter_text = ""
+        self._current_filter_type = 0
         self.load_wallpapers()
         self.scroll.setWidget(self.grid_w)
         layout.addWidget(self.scroll)
 
+
+    def request_thumb(self, path, card):
+        if path in self.thumb_cache:
+            card._apply_thumb(self.thumb_cache[path])
+            return
+        self.thumb_reqs.setdefault(path, []).append(card)
+        if len(self.thumb_reqs[path]) == 1:
+            worker = ThumbWorker(path, self.thumb_signals)
+            self.thread_pool.start(worker)
+
+    def _on_thumb_loaded(self, path, img):
+        try:
+            from PyQt6.QtGui import QPixmap
+        except:
+            from PyQt5.QtGui import QPixmap
+        pm = QPixmap.fromImage(img)
+        pm = apply_top_rounded_mask(pm)
+        self.thumb_cache[path] = pm
+        for card in self.thumb_reqs.pop(path, []):
+            card._apply_thumb(pm)
+
     def load_wallpapers(self):
         try:
             raw = subprocess.check_output(
-                f"{AURA_BIN} pool", shell=True, text=True, stderr=subprocess.DEVNULL)
+                f"{AURA_BIN} pool --kind all", shell=True, text=True, stderr=subprocess.DEVNULL)
             files = [line.strip() for line in raw.splitlines()
-                     if line.strip().startswith("/") and line.strip().lower().endswith((".mp4", ".webm", ".mkv"))]
+                     if line.strip().startswith("/") and line.strip().lower().endswith((".mp4", ".webm", ".mkv", ".jpg", ".jpeg", ".png", ".webp"))]
         except Exception:
             if not os.path.exists(WALL_DIR):
                 return
             files = sorted(
                 os.path.join(WALL_DIR, f) for f in os.listdir(WALL_DIR)
-                if f.lower().endswith((".mp4", ".webm", ".mkv")))
+                if f.lower().endswith((".mp4", ".webm", ".mkv", ".jpg", ".jpeg", ".png", ".webp"))
+                and os.path.getsize(os.path.join(WALL_DIR, f)) > 30000)
 
         # Sort: favorites first, then alphabetical
         favs = set(load_favs())
         files.sort(key=lambda x: (0 if x in favs else 1, os.path.basename(x).lower()))
 
         for idx, path in enumerate(files):
-            jpg = path.replace(".mp4", ".jpg")
-            if not os.path.exists(jpg):
-                subprocess.Popen(
-                    ["ffmpeg", "-y", "-i", path, "-vframes", "1", "-q:v", "2",
-                     jpg, "-loglevel", "error"])
-            card = WallpaperCard(path)
+            if path.lower().endswith((".mp4", ".webm", ".mkv")):
+                jpg = path.replace(".mp4", ".jpg").replace(".webm", ".jpg").replace(".mkv", ".jpg")
+                if not os.path.exists(jpg):
+                    subprocess.Popen(
+                        ["ffmpeg", "-y", "-i", path, "-vframes", "1", "-q:v", "2",
+                         jpg, "-loglevel", "error"])
+            else:
+                jpg = path
+            card = WallpaperCard(path, panel=self)
             self.all_cards.append(card)
-            self.grid_lay.addWidget(card, idx // 4, idx % 4)
+            self.grid_lay.addWidget(card, idx // 3, idx % 3)
+
+    def remove_card(self, card):
+        if card in self.all_cards:
+            self.all_cards.remove(card)
+        card.setParent(None)
+        card.deleteLater()
+        self.reflow_grid()
+
+    def reflow_grid(self):
+        # Remove all items from grid layout (they are still in all_cards list)
+        for i in reversed(range(self.grid_lay.count())):
+            item = self.grid_lay.itemAt(i)
+            if item.widget():
+                self.grid_lay.removeItem(item)
+        # Re-add all visible cards sequentially to close gaps
+        alive_cards = [c for c in self.all_cards if not c.isHidden()]
+        for idx, c in enumerate(alive_cards):
+            self.grid_lay.addWidget(c, idx // 3, idx % 3)
+
+    def _filter_type(self, type_idx):
+        # 0=ALL, 1=LIVE, 2=STATIC
+        self._current_filter_type = type_idx
+        self._apply_filters()
 
     def filter_cards(self, text):
+        self._current_filter_text = text.lower()
+        self._apply_filters()
+
+    def _apply_filters(self):
+        txt = self._current_filter_text
+        t_idx = self._current_filter_type
         for card in self.all_cards:
             name = os.path.basename(card.video_path).lower()
-            card.setVisible(text.lower() in name)
+            is_video = card.video_path.lower().endswith((".mp4", ".webm", ".mkv"))
+            
+            match_txt = (txt in name)
+            match_type = True
+            if t_idx == 1 and not is_video: match_type = False
+            if t_idx == 2 and is_video: match_type = False
+            
+            card.setVisible(match_txt and match_type)
+        self.reflow_grid()
 
 
 class OnlineCard(QFrame):
     _sem = threading.Semaphore(6)
     _thumb_bytes = pyqtSignal(bytes)
 
-    def __init__(self, title, thumb_url, dl_url, parent=None):
+    def __init__(self, title, thumb_url, live_url, static_url, parent=None):
         super().__init__(parent)
         self.setObjectName("Card")
-        self.dl_url = dl_url
-        self.setFixedSize(224, 200)
+        self.live_url = live_url
+        self.static_url = static_url
+        self.setFixedSize(268, 230)
+        self.setCursor(QCursor(HC))
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
         self._thumb_bytes.connect(self._render_thumb)
 
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(8, 8, 8, 10)
-        lay.setSpacing(8)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # ── Thumbnail (16:9) ──────────────────────────────────────────────
+        thumb_container = QFrame()
+        thumb_container.setFixedSize(268, 151)
+        thumb_container.setStyleSheet("background: #1b1b20; border-radius: 12px 12px 0 0;")
+        tc_lay = QVBoxLayout(thumb_container)
+        tc_lay.setContentsMargins(0, 0, 0, 0)
 
         self.thumb = QLabel("…")
-        self.thumb.setFixedSize(208, 117)
+        self.thumb.setFixedSize(268, 151)
         self.thumb.setAlignment(AF.AlignCenter)
-        self.thumb.setStyleSheet(
-            "background:#111111; border-radius:4px; color:#222222; font-size:18px;")
-        lay.addWidget(self.thumb)
+        self.thumb.setStyleSheet("background: transparent; color: #555555; border: none;")
+        tc_lay.addWidget(self.thumb)
 
-        name = title[:22] + "…" if len(title) > 22 else title
-        t = QLabel(name.upper())
-        t.setStyleSheet(
-            "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace;"
-            "font-size:10px; font-weight:bold; letter-spacing:1px;")
-        t.setWordWrap(True)
-        lay.addWidget(t)
-        lay.addStretch()
+        # Top badges overlay
+        badge_row = QHBoxLayout()
+        badge_row.setContentsMargins(8, 8, 8, 0)
+        badge_row.setSpacing(4)
+        
+        b_live = QLabel("⬇ CLOUD")
+        b_live.setStyleSheet("background: rgba(14,14,19,0.85); color:#a277ff; border-radius: 10px; padding: 2px 8px; font-family: 'JetBrains Mono',monospace; font-size:10px; font-weight:bold;")
+        badge_row.addWidget(b_live)
+        badge_row.addStretch()
 
-        dl = accent_btn("⬇ DOWNLOAD")
-        dl.clicked.connect(self.do_download)
-        lay.addWidget(dl)
+        overlay = QWidget(thumb_container)
+        overlay.setGeometry(0, 0, 268, 151)
+        overlay.setStyleSheet("background: transparent;")
+        overlay.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents)
+        overlay_lay = QVBoxLayout(overlay)
+        overlay_lay.setContentsMargins(0, 0, 0, 0)
+        overlay_lay.addLayout(badge_row)
+        overlay_lay.addStretch()
+
+        outer.addWidget(thumb_container)
+
+        # ── Metadata strip ────────────────────────────────────────────────
+        meta = QFrame()
+        meta.setStyleSheet("background: rgba(27,27,32,0.9); border-radius: 0 0 12px 12px;")
+        meta_lay = QVBoxLayout(meta)
+        meta_lay.setContentsMargins(12, 10, 12, 10)
+        meta_lay.setSpacing(6)
+
+        name = title[:23] + "…" if len(title) > 23 else title
+        t = QLabel(name.title())
+        t.setObjectName("CardTitle")
+        
+        title_row = QHBoxLayout()
+        title_row.addWidget(t)
+        title_row.addStretch()
+        meta_lay.addLayout(title_row)
+
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(6)
+        
+        if self.live_url:
+            dl_live = QPushButton("🎥 Live")
+            dl_live.setObjectName("ApplyBtn")
+            dl_live.setFixedHeight(28)
+            dl_live.setFocusPolicy(NoFocus)
+            dl_live.setCursor(QCursor(HC))
+            dl_live.clicked.connect(lambda: self.do_download(self.live_url))
+            btn_row.addWidget(dl_live)
+            
+        if self.static_url:
+            dl_static = QPushButton("🖼️ Static")
+            dl_static.setObjectName("ApplyBtn")
+            dl_static.setFixedHeight(28)
+            dl_static.setFocusPolicy(NoFocus)
+            dl_static.setCursor(QCursor(HC))
+            dl_static.clicked.connect(lambda: self.do_download(self.static_url))
+            btn_row.addWidget(dl_static)
+            
+        meta_lay.addLayout(btn_row)
+
+        outer.addWidget(meta)
 
         threading.Thread(target=self._fetch_bytes, args=(thumb_url,), daemon=True).start()
 
@@ -655,20 +887,20 @@ class OnlineCard(QFrame):
         except ImportError:
             from PyQt5.QtGui import QPixmap
         px = QPixmap()
-        px.loadFromData(data)
+        success = px.loadFromData(data)
         if not px.isNull():
             px = px.scaled(
-                208, 117,
+                268, 151,
                 Qt.AspectRatioMode.KeepAspectRatioByExpanding,
                 Qt.TransformationMode.SmoothTransformation)
+            px = apply_top_rounded_mask(px)
             self.thumb.setPixmap(px)
-            self.thumb.setStyleSheet("border-radius:4px; background:#111111;")
             self.thumb.setText("")
 
-    def do_download(self):
+    def do_download(self, url):
         main_win = self.window()
         if hasattr(main_win, "start_download"):
-            main_win.start_download(self.dl_url)
+            main_win.start_download(url)
 
 
 class ExplorePanel(QWidget):
@@ -723,23 +955,11 @@ class ExplorePanel(QWidget):
         self.provider_cb.setStyleSheet(cb_style)
         self.res_cb.setStyleSheet(cb_style)
         
-        self.provider_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
-        self.res_cb.currentIndexChanged.connect(lambda: self.load_category(self.url_input.text().strip()))
+        self.provider_cb.currentIndexChanged.connect(lambda: self.load_category(self.window().top_search_bar.text().strip()))
+        self.res_cb.currentIndexChanged.connect(lambda: self.load_category(self.window().top_search_bar.text().strip()))
         
         header.addWidget(self.provider_cb)
         header.addWidget(self.res_cb)
-
-        self.url_input = QLineEdit()
-        self.url_input.setPlaceholderText("Search or paste URL…")
-        self.url_input.setFixedHeight(32)
-        self.url_input.setFixedWidth(200)
-        self.url_input.returnPressed.connect(lambda: self.load_category(self.url_input.text().strip()))
-        header.addWidget(self.url_input)
-        
-        fb = accent_btn("🔍 SEARCH")
-        fb.setFixedHeight(32)
-        fb.clicked.connect(lambda: self.load_category(self.url_input.text().strip()))
-        header.addWidget(fb)
         lay.addLayout(header)
 
         sep = QFrame()
@@ -751,6 +971,11 @@ class ExplorePanel(QWidget):
         cats_row = QHBoxLayout()
         cats_row.setSpacing(4)
         self.cat_btns = []
+        
+        from PyQt6.QtWidgets import QButtonGroup
+        self.cat_group = QButtonGroup(self)
+        self.cat_group.setExclusive(True)
+        
         cats = [
             ("ALL",       ""),
             ("4K",        "4k"),
@@ -759,14 +984,15 @@ class ExplorePanel(QWidget):
             ("NATURE",    "tag:nature"),
             ("SUPERHERO", "tag:superhero"),
         ]
-        for label, tag in cats:
+        for i, (label, tag) in enumerate(cats):
             b = QPushButton(label)
-            b.setObjectName("TabBtn")
+            b.setObjectName("TagPill")
             b.setFocusPolicy(NoFocus)
             b.setCheckable(True)
             b.setCursor(QCursor(HC))
             if tag == "": b.setChecked(True)
             b.clicked.connect(lambda _, t=tag: self.load_category(t))
+            self.cat_group.addButton(b, i)
             self.cat_btns.append(b)
             cats_row.addWidget(b)
         cats_row.addStretch()
@@ -775,6 +1001,12 @@ class ExplorePanel(QWidget):
         # Grid
         self.scroll = QScrollArea()
         self.scroll.setWidgetResizable(True)
+        
+        self.scroll.setVerticalScrollBarPolicy(SBOff)
+        self.scroll.setHorizontalScrollBarPolicy(SBOff)
+        
+
+
         self.grid_w = QWidget()
         self.grid_w.setStyleSheet("background:transparent;")
         self.grid_lay = QGridLayout(self.grid_w)
@@ -785,9 +1017,9 @@ class ExplorePanel(QWidget):
 
         # Footer
         bot = QHBoxLayout()
-        self.status_lbl = QLabel("CONNECTING TO MOTIONBGS…")
+        self.status_lbl = QLabel("CONNECTING TO CATALOG…")
         self.status_lbl.setStyleSheet(
-            "color:#222222; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px; letter-spacing:2px;")
+            "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px; letter-spacing:2px;")
         bot.addWidget(self.status_lbl)
         bot.addStretch()
         self.more_btn = accent_btn("+ LOAD MORE")
@@ -806,7 +1038,7 @@ class ExplorePanel(QWidget):
             return
 
         if tag.startswith("tag:") or tag == "":
-            self.url_input.clear()
+            pass
 
         for btn in self.cat_btns:
             btn.setChecked(btn.text().lower() == (tag.replace("tag:", "") or "all"))
@@ -826,10 +1058,10 @@ class ExplorePanel(QWidget):
 
     def show_next_batch(self):
         batch = self._all_items[self._shown : self._shown + self._batch]
-        for i, (_, title, thumb_url, dl_url) in enumerate(batch):
-            card = OnlineCard(title, thumb_url, dl_url)
+        for i, (_, title, thumb_url, live_url, static_url) in enumerate(batch):
+            card = OnlineCard(title, thumb_url, live_url, static_url)
             idx  = self._shown + i
-            self.grid_lay.addWidget(card, idx // 4, idx % 4)
+            self.grid_lay.addWidget(card, idx // 3, idx % 3)
         self._shown += len(batch)
         self.status_lbl.setText(
             f"✓  {self._shown} / {len(self._all_items)} LOADED")
@@ -870,6 +1102,7 @@ class ExplorePanel(QWidget):
                             mid, title,
                             f"{base}/i/c/364x205/media/{mid}/{raw_name}.jpg",
                             f"{base}/dl/hd/{mid}/",
+                            f"{base}/media/{mid}/{raw_name}.jpg"
                         ))
                         
             elif provider == "MoeWalls":
@@ -907,7 +1140,8 @@ class ExplorePanel(QWidget):
                                 if slug_match:
                                     slug = slug_match.group(1)
                                     dl_url = f"{base}/wp-content/uploads/preview/{year}/{slug}-preview.webm"
-                                    items.append((slug, clean_title, thumb_url, dl_url))
+                                    static_url = thumb_url.replace("-364x205", "").replace("-314x177", "")
+                                    items.append((slug, clean_title, thumb_url, dl_url, static_url))
                     except Exception:
                         break
 
@@ -937,7 +1171,7 @@ class ExplorePanel(QWidget):
                             res_str = d.get("resolution", "")
                             if dl not in seen:
                                 seen.add(dl)
-                                items.append((d.get("id", ""), res_str, thumb, dl))
+                                items.append((d.get("id", ""), res_str, thumb, None, dl))
                     except Exception:
                         break
 
@@ -1000,7 +1234,7 @@ class DisplaysPanel(QWidget):
             "font-size:13px; font-weight:bold; letter-spacing:2px;")
         res_lbl = QLabel(mon['res'])
         res_lbl.setStyleSheet(
-            "color:#333333; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:11px;")
+            "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:11px;")
         header.addWidget(name_lbl)
         header.addStretch()
         header.addWidget(res_lbl)
@@ -1065,8 +1299,8 @@ class SettingsPanel(QWidget):
         layout.addSpacing(8)
 
         opts = [
-            ("AUTOSTART",        "Start animated wallpaper engine on boot", "AUTOSTART",    "1"),
-            ("AUTO-THEMING",     "Sync accent color from wallpaper", "THEME",        "1"),
+            ("AUTOSTART",        "Start animated WelsPaper engine on boot", "AUTOSTART",    "1"),
+            ("AUTO-THEMING",     "Sync accent color from WelsPaper", "THEME",        "1"),
             ("DYNAMIC BACKGROUND","Tint app background with accent (disable on low-end PCs)", "DYNAMIC_BG", "1"),
             ("AUTO PAUSE",       "Pause on fullscreen windows",       "AUTO_PAUSE",   "1"),
             ("BATTERY SAVER",    "Pause below battery threshold",     "BATTERY_PAUSE","1"),
@@ -1074,7 +1308,7 @@ class SettingsPanel(QWidget):
         ]
 
         # Sync AUTOSTART key with actual bspwm config before rendering
-        cfg = os.path.expanduser("~/.config/bspwm/rices/wels/theme-config.bash")
+        cfg = os.path.expanduser(f"~/.config/bspwm/rices/{get_current_rice()}/theme-config.bash")
         if os.path.exists(cfg):
             with open(cfg, "r") as f:
                 if 'ENGINE="Aura"' in f.read():
@@ -1085,6 +1319,7 @@ class SettingsPanel(QWidget):
         for label, desc, key, default in opts:
             val = conf_get(key, default)
             layout.addWidget(self._make_row(label, desc, key, val == "1"))
+        layout.addWidget(self._make_kitty_row())
 
         layout.addSpacing(16)
         
@@ -1097,9 +1332,9 @@ class SettingsPanel(QWidget):
         
         texts = QVBoxLayout()
         lbl = QLabel("DIM / BRIGHTNESS")
-        lbl.setStyleSheet("color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:12px; font-weight:bold; letter-spacing:1px;")
-        desc_lbl = QLabel("Adjust wallpaper brightness (live)")
-        desc_lbl.setStyleSheet("color:#2a2a2a; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
+        lbl.setStyleSheet("color:#e4e1e9; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:12px; font-weight:bold; letter-spacing:1px;")
+        desc_lbl = QLabel("Adjust WelsPaper brightness (live)")
+        desc_lbl.setStyleSheet("color:#a0a0a0; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
         texts.addWidget(lbl)
         texts.addWidget(desc_lbl)
         h.addLayout(texts)
@@ -1127,7 +1362,7 @@ class SettingsPanel(QWidget):
         layout.addSpacing(8)
 
         iv_row = QHBoxLayout()
-        iv_row.addWidget(mono_lbl("THEMING INTERVAL (sec)", "#333333", 11, 1))
+        iv_row.addWidget(mono_lbl("THEMING INTERVAL (sec)", "#a0a0a0", 11, 1))
         iv_row.addStretch()
         self.interval_input = QLineEdit(conf_get("THEME_INTERVAL", "15"))
         self.interval_input.setFixedWidth(60)
@@ -1143,7 +1378,7 @@ class SettingsPanel(QWidget):
 
         layout.addSpacing(8)
         bat_row = QHBoxLayout()
-        bat_row.addWidget(mono_lbl("BATTERY PAUSE BELOW (%)", "#333333", 11, 1))
+        bat_row.addWidget(mono_lbl("BATTERY PAUSE BELOW (%)", "#a0a0a0", 11, 1))
         bat_row.addStretch()
         self.bat_input = QLineEdit(conf_get("BATTERY_PAUSE_BELOW", "60"))
         self.bat_input.setFixedWidth(60)
@@ -1158,7 +1393,7 @@ class SettingsPanel(QWidget):
         
         layout.addSpacing(8)
         slide_row = QHBoxLayout()
-        slide_row.addWidget(mono_lbl("AUTO ROTATE (min, 0=off)", "#333333", 11, 1))
+        slide_row.addWidget(mono_lbl("AUTO ROTATE (min, 0=off)", "#a0a0a0", 11, 1))
         slide_row.addStretch()
         self.slide_input = QLineEdit(conf_get("SLIDESHOW", "0"))
         self.slide_input.setFixedWidth(60)
@@ -1171,7 +1406,46 @@ class SettingsPanel(QWidget):
         slide_row.addSpacing(8)
         slide_row.addWidget(save_slide)
         layout.addLayout(slide_row)
+
+        
         layout.addStretch()
+
+    def _make_kitty_row(self):
+        row = QFrame()
+        row.setObjectName("SettingRow")
+        row.setFixedHeight(64)
+        h = QHBoxLayout(row)
+        h.setContentsMargins(16, 0, 16, 0)
+
+        texts = QVBoxLayout()
+        lbl = QLabel("THEME KITTY")
+        lbl.setStyleSheet(
+            "color:#e4e1e9; font-family:'JetBrains Mono','Fira Mono',monospace;"
+            "font-size:12px; font-weight:bold; letter-spacing:1px;")
+        desc_lbl = QLabel("Propagate colors and image to Kitty terminal")
+        desc_lbl.setStyleSheet(
+            "color:#a0a0a0; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
+        texts.addWidget(lbl)
+        texts.addWidget(desc_lbl)
+        h.addLayout(texts)
+        h.addStretch()
+
+        sw = ToggleSwitch()
+        targets = conf_get("THEME_TARGETS", "ghostzk bspwm polybar rofi dunst kitty ghostty mpv")
+        sw._on = "kitty" in targets
+        sw.update()
+
+        def _toggle(val):
+            targets_raw = conf_get("THEME_TARGETS", "ghostzk bspwm polybar rofi dunst kitty ghostty mpv")
+            targets_clean = targets_raw.replace('"', '').replace("'", "")
+            parts = [p for p in targets_clean.split() if p != "kitty"]
+            if val:
+                parts.append("kitty")
+            conf_set("THEME_TARGETS", f'"{ " ".join(parts) }"')
+
+        sw.toggled.connect(_toggle)
+        h.addWidget(sw)
+        return row
 
     def _make_row(self, label, desc, key, initial):
         row = QFrame()
@@ -1183,12 +1457,12 @@ class SettingsPanel(QWidget):
         texts = QVBoxLayout()
         lbl = QLabel(label)
         lbl.setStyleSheet(
-            "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace;"
+            "color:#e4e1e9; font-family:'JetBrains Mono','Fira Mono',monospace;"
             "font-size:12px; font-weight:bold; letter-spacing:1px;")
         desc_lbl = QLabel(desc)
         desc_lbl.setWordWrap(True)
         desc_lbl.setStyleSheet(
-            "color:#2a2a2a; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
+            "color:#a0a0a0; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
         texts.addWidget(lbl)
         texts.addWidget(desc_lbl)
         h.addLayout(texts)
@@ -1199,7 +1473,7 @@ class SettingsPanel(QWidget):
             conf_set(k, "1" if val else "0")
             if k == "AUTOSTART":
                 # Directly update gh0stzk's bspwm config to set the engine
-                cfg = os.path.expanduser("~/.config/bspwm/rices/wels/theme-config.bash")
+                cfg = os.path.expanduser(f"~/.config/bspwm/rices/{get_current_rice()}/theme-config.bash")
                 if os.path.exists(cfg):
                     engine_val = "Aura" if val else "Theme"
                     subprocess.run(["sed", "-i", f's/^ENGINE=.*/ENGINE="{engine_val}"/', cfg])
@@ -1222,9 +1496,9 @@ class AboutPanel(QWidget):
         logo.setAlignment(AF.AlignCenter)
         layout.addWidget(logo)
 
-        sub = QLabel("ANIMATED LIVE WALLPAPER ENGINE · X11 · BSPWM")
+        sub = QLabel("ANIMATED LIVE WELSPAPER ENGINE · X11 · BSPWM")
         sub.setStyleSheet(
-            "color:#222222; font-family:'JetBrains Mono','Fira Mono',monospace;"
+            "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace;"
             "font-size:11px; letter-spacing:3px;")
         sub.setAlignment(AF.AlignCenter)
         layout.addWidget(sub)
@@ -1238,14 +1512,14 @@ class AboutPanel(QWidget):
         ib_lay.setContentsMargins(24, 20, 24, 20)
         for line in [
             "xwinwrap embeds mpv directly into the X11 root window.",
-            "Dominant color extracted per-wallpaper, propagated to bspwm,",
+            "Dominant color extracted per-WelsPaper, propagated to bspwm,",
             "Polybar, Rofi, Dunst, Kitty and Ghostty automatically.",
             "",
             "Built for gh0stzk dotfiles.",
         ]:
             l = QLabel(line)
             l.setStyleSheet(
-                "color:#333333; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:11px;")
+                "color:#888888; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:11px;")
             ib_lay.addWidget(l)
         layout.addWidget(info_box)
 
@@ -1270,6 +1544,32 @@ class AboutPanel(QWidget):
 
 
 # ─────────────────────────────────────────────── MAIN ───
+
+class ThumbWorkerSignals(_qcore.QObject if hasattr(sys.modules[__name__], '_qcore') else QObject):
+    result = pyqtSignal(str, object)
+
+class ThumbWorker(QRunnable):
+    def __init__(self, path, signals):
+        super().__init__()
+        self.path = path
+        self.signals = signals
+
+    def run(self):
+        try:
+            try:
+                from PyQt6.QtGui import QImageReader
+                from PyQt6.QtCore import QSize
+            except:
+                from PyQt5.QtGui import QImageReader
+                from PyQt5.QtCore import QSize
+            reader = QImageReader(self.path)
+            reader.setScaledSize(QSize(268, 151))
+            img = reader.read()
+            if not img.isNull():
+                self.signals.result.emit(self.path, img)
+        except:
+            pass
+
 class AuraStudio(QMainWindow):
     theme_ready = pyqtSignal(int, int, int)
 
@@ -1287,7 +1587,8 @@ class AuraStudio(QMainWindow):
         self._is_dragging = False
         self._drag_pos = QPoint()
         self._build_ui()
-        self.setStyleSheet(STYLESHEET)
+        saved_theme = conf_get('APP_THEME', 'Vellum (Default)')
+        self.setStyleSheet(build_theme_stylesheet(saved_theme))
         
         # System Tray setup
         from PyQt6.QtWidgets import QSystemTrayIcon, QMenu
@@ -1317,7 +1618,7 @@ class AuraStudio(QMainWindow):
         pause_act = tray_menu.addAction("Play / Pause")
         pause_act.triggered.connect(lambda: aura("toggle-pause"))
         
-        next_act = tray_menu.addAction("Next Wallpaper")
+        next_act = tray_menu.addAction("Next WelsPaper")
         next_act.triggered.connect(lambda: aura("next"))
         
         tray_menu.addSeparator()
@@ -1342,52 +1643,47 @@ class AuraStudio(QMainWindow):
         self.setAcceptDrops(True)
 
     def _build_ui(self):
-        # CRITICAL: #MainContainer has no border-radius and no border.
-        # bspwm draws its own square border — CSS border on root = double ugly border.
         root = QFrame()
         root.setObjectName("MainContainer")
         self.setCentralWidget(root)
-        root_lay = QVBoxLayout(root)
+        root_lay = QHBoxLayout(root)
         root_lay.setContentsMargins(0, 0, 0, 0)
         root_lay.setSpacing(0)
-
-        top = QHBoxLayout()
-        top.setContentsMargins(0, 0, 0, 0)
-        top.setSpacing(0)
 
         # ── Sidebar ──
         sidebar = QFrame()
         sidebar.setObjectName("Sidebar")
-        sidebar.setFixedWidth(180)
+        sidebar.setFixedWidth(240)
         sb_lay = QVBoxLayout(sidebar)
         sb_lay.setContentsMargins(0, 0, 0, 0)
-        sb_lay.setSpacing(0)
+        sb_lay.setSpacing(8)
 
         # Logo block
         logo_frame = QFrame()
-        logo_frame.setFixedHeight(72)
-        logo_frame.setStyleSheet("background: transparent; border-bottom: 1px solid #1a1a1a;")
-        lf_lay = QVBoxLayout(logo_frame)
-        lf_lay.setContentsMargins(20, 14, 20, 14)
-        lf_lay.setSpacing(2)
-        logo_lbl = QLabel("AURA")
+        logo_frame.setFixedHeight(80)
+        lf_lay = QHBoxLayout(logo_frame)
+        lf_lay.setContentsMargins(20, 20, 20, 10)
+        lf_lay.setSpacing(8)
+        
+        logo_text = QVBoxLayout()
+        logo_lbl = QLabel("VELLUM")
         logo_lbl.setObjectName("Logo")
-        sub_lbl = QLabel("STUDIO")
+        sub_lbl = QLabel("WAYLAND::CORE")
         sub_lbl.setObjectName("LogoSub")
-        lf_lay.addWidget(logo_lbl)
-        lf_lay.addWidget(sub_lbl)
+        logo_text.addWidget(logo_lbl)
+        logo_text.addWidget(sub_lbl)
+        logo_text.setSpacing(0)
+        lf_lay.addLayout(logo_text)
         sb_lay.addWidget(logo_frame)
-
-        sb_lay.addSpacing(24)
 
         # Nav
         self.nav_btns = []
         nav_items = [
-            ("LIBRARY",  0),
-            ("EXPLORE",  1),
-            ("DISPLAYS", 2),
-            ("SETTINGS", 3),
-            ("ABOUT",    4),
+            ("󰕰  Library",  0),
+            ("󰀪  Explore",  1),
+            ("󰍹  Displays", 2),
+            ("󰒓  Settings", 3),
+            ("󰋽  About",    4),
         ]
         for label, idx in nav_items:
             btn = QPushButton(label)
@@ -1401,15 +1697,87 @@ class AuraStudio(QMainWindow):
 
         self.nav_btns[0].setChecked(True)
         sb_lay.addStretch()
+        
+        # Telemetry Block
+        tele_frame = QFrame()
+        tele_frame.setStyleSheet("background-color: rgba(31, 31, 37, 0.6); border-radius: 8px; margin: 16px;")
+        tele_lay = QVBoxLayout(tele_frame)
+        tele_lay.setContentsMargins(12, 12, 12, 12)
+        tele_lbl = QLabel("TELEMETRY • LIVE")
+        tele_lbl.setStyleSheet("color: #e7bcbd; font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: bold;")
+        tele_lay.addWidget(tele_lbl)
+        
+        gpu_lbl = QLabel("GPU LOAD: 34% // 60FPS")
+        gpu_lbl.setStyleSheet("color: #e4e1e9; font-size: 11px;")
+        tele_lay.addWidget(gpu_lbl)
+        
+        sb_lay.addWidget(tele_frame)
+        root_lay.addWidget(sidebar)
 
-        # Version
-        ver_lbl = QLabel("v1.0")
-        ver_lbl.setStyleSheet(
-            "color:#1a1a1a; font-family:'JetBrains Mono','Fira Mono',monospace;"
-            "font-size:10px; padding: 0 20px 8px 20px;")
-        sb_lay.addWidget(ver_lbl)
+        # ── Right Area ──
+        right_widget = QFrame()
+        right_lay = QVBoxLayout(right_widget)
+        right_lay.setContentsMargins(0, 0, 0, 0)
+        right_lay.setSpacing(0)
+        
+        # TopBar
+        topbar = QFrame()
+        topbar.setObjectName("TopBar")
+        topbar.setFixedHeight(64)
+        topbar_lay = QHBoxLayout(topbar)
+        topbar_lay.setContentsMargins(24, 0, 24, 0)
+        
+        title_lbl = QLabel("Vellum // Engine v2.4")
+        title_lbl.setStyleSheet("color: #e7bcbd; font-family: 'JetBrains Mono', monospace; font-size: 12px;")
+        topbar_lay.addWidget(title_lbl)
+        topbar_lay.addSpacing(24)
+        
+        self.top_search_bar = QLineEdit()
+        self.top_search_bar.setObjectName("SearchBar")
+        self.top_search_bar.setPlaceholderText("Search WelsPapers or URLs...")
+        self.top_search_bar.setFixedWidth(300)
+        
+        def _on_search_changed(txt):
+            if self.stack.currentIndex() == 0:
+                self.stack.widget(0).filter_cards(txt)
+                
+        def _on_search_enter():
+            idx = self.stack.currentIndex()
+            txt = self.top_search_bar.text().strip()
+            if idx == 1:
+                self.stack.widget(1).load_category(txt)
+            elif idx == 0:
+                self.stack.widget(0).filter_cards(txt)
 
-        top.addWidget(sidebar)
+        self.top_search_bar.textChanged.connect(_on_search_changed)
+        self.top_search_bar.returnPressed.connect(_on_search_enter)
+        topbar_lay.addWidget(self.top_search_bar)
+        topbar_lay.addStretch()
+        
+        from PyQt6.QtWidgets import QButtonGroup
+        self.type_group = QButtonGroup(self)
+        self.type_group.setExclusive(True)
+        
+        for i, pill in enumerate(["ALL", "LIVE", "STATIC"]):
+            p = QPushButton(pill)
+            p.setObjectName("TagPill")
+            p.setCheckable(True)
+            p.setCursor(QCursor(HC))
+            if i == 0: p.setChecked(True)
+            self.type_group.addButton(p, i)
+            topbar_lay.addWidget(p)
+            
+        def _on_type_changed(btn):
+            # 0=ALL, 1=LIVE, 2=STATIC
+            idx = self.type_group.id(btn)
+            self.switch_view(0) # Switch to Library tab!
+            lib = self.stack.widget(0)
+            if hasattr(lib, "_filter_type"):
+                lib._filter_type(idx)
+                
+        self.type_group.buttonClicked.connect(_on_type_changed)
+        
+        right_lay.addWidget(topbar)
 
         # ── Stack ──
         self.stack = QStackedWidget()
@@ -1418,46 +1786,52 @@ class AuraStudio(QMainWindow):
         self.stack.addWidget(DisplaysPanel())
         self.stack.addWidget(SettingsPanel())
         self.stack.addWidget(AboutPanel())
-        top.addWidget(self.stack)
+        right_lay.addWidget(self.stack)
 
-        root_lay.addLayout(top)
-
-        # ── Control Bar ──
+        # ── Floating Dock ──
+        dock_container = QFrame()
+        dock_container.setFixedHeight(80)
+        dock_container.setStyleSheet("background: transparent;")
+        dock_c_lay = QHBoxLayout(dock_container)
+        dock_c_lay.setContentsMargins(24, 8, 24, 20)
+        
         ctrl_frame = QFrame()
-        ctrl_frame.setObjectName("ControlBar")
-        ctrl_frame.setFixedHeight(56)
+        ctrl_frame.setObjectName("FloatingDock")
         ctrl = QHBoxLayout(ctrl_frame)
         ctrl.setContentsMargins(20, 0, 20, 0)
         ctrl.setSpacing(16)
+        
+        self.active_lbl = QLabel("Ready")
+        self.active_lbl.setStyleSheet("color: #e4e1e9; font-family: 'Inter', sans-serif; font-size: 13px; font-weight: bold;")
+        ctrl.addWidget(self.active_lbl)
+        ctrl.addStretch()
 
         # Playback controls
-        cmds = [("⏮", "prev"), ("⏸", "toggle-pause"), ("⏭", "next")]
-        for icon, cmd in cmds:
-            b = QPushButton(icon)
-            b.setObjectName("PlayBtn")
-            b.setFixedSize(32, 32)
-            b.setFocusPolicy(NoFocus)
-            b.setCursor(QCursor(HC))
-            b.clicked.connect(lambda _, c=cmd: aura(c))
-            ctrl.addWidget(b)
-
-        stop_b = QPushButton("⏹")
-        stop_b.setObjectName("StopBtn")
-        stop_b.setFixedSize(32, 32)
-        stop_b.setFocusPolicy(NoFocus)
-        stop_b.setCursor(QCursor(HC))
-        stop_b.clicked.connect(lambda: aura("stop"))
-        ctrl.addWidget(stop_b)
-
-        ctrl.addSpacing(16)
-
-        # Color Picker Button
-        self.color_btn = QPushButton()
-        self.color_btn.setFixedSize(26, 26)
-        self.color_btn.setCursor(QCursor(HC))
-        self.color_btn.setFocusPolicy(NoFocus)
-        self.color_btn.setStyleSheet("background-color: #cba6f7; border-radius: 4px; border: 1px solid #1a1a1a;")
+        b_prev = QPushButton("⏮")
+        b_prev.setObjectName("PlayBtn")
+        b_prev.setFixedSize(32, 32)
+        b_prev.clicked.connect(lambda: aura("prev"))
+        ctrl.addWidget(b_prev)
         
+        b_play = QPushButton("⏸")
+        b_play.setObjectName("PlayBtn")
+        b_play.setFixedSize(40, 40)
+        b_play.clicked.connect(lambda: aura("toggle-pause"))
+        ctrl.addWidget(b_play)
+        
+        b_next = QPushButton("⏭")
+        b_next.setObjectName("PlayBtn")
+        b_next.setFixedSize(32, 32)
+        b_next.clicked.connect(lambda: aura("next"))
+        ctrl.addWidget(b_next)
+        
+        ctrl.addStretch()
+        
+        self.color_btn = QPushButton(" ")
+        self.color_btn.setFixedSize(16, 16)
+        self.color_btn.setStyleSheet("background-color: #ff5168; border-radius: 8px;")
+        ctrl.addWidget(self.color_btn)
+
         def _pick_color():
             from PyQt6.QtWidgets import QColorDialog
             from PyQt6.QtGui import QColor
@@ -1487,95 +1861,14 @@ aura_theme_write "$palette"
                 conf_set("THEME", "0")
                 
         self.color_btn.clicked.connect(_pick_color)
-        ctrl.addWidget(self.color_btn)
-        
-        ctrl.addSpacing(16)
-        
-        self.active_lbl = QLabel("NO WALLPAPER ACTIVE")
-        self.active_lbl.setStyleSheet(
-            "color:#222222; font-family:'JetBrains Mono','Fira Mono',monospace;"
-            "font-size:11px; letter-spacing:1px;")
-        ctrl.addWidget(self.active_lbl)
-        ctrl.addStretch()
-        
-        c_style = """
-            QComboBox { background: rgba(30,30,35,200); border: 1px solid #333333; color: #cccccc; border-radius: 4px; padding: 2px 6px; font-size: 10px; font-weight: bold; }
-            QComboBox::drop-down { border: none; }
-            QComboBox:on, QComboBox:focus { background: rgba(40,40,45,255); border: 1px solid #cba6f7; }
-            QComboBox QAbstractItemView { background: #1e1e23; color: #cccccc; selection-background-color: #cba6f7; selection-color: #111111; border: 1px solid #333333; outline: none; }
-        """
-        
-        # Shader Selector
-        self.shader_cb = QComboBox()
-        self.shader_cb.setFixedHeight(26)
-        self.shader_cb.setStyleSheet(c_style)
-        self.shader_cb.addItems(["NO FILTER", "BLUR (Light)", "BLUR (Heavy)", "BLACK & WHITE", "SEPIA", "GLITCH (RGB Shift)", "CYBERPUNK", "INVERT", "HUE SHIFT"])
-        
-        def _on_shader_change(idx):
-            fx = {
-                0: "", 1: "gblur=sigma=5", 2: "gblur=sigma=12", 3: "eq=saturation=0", 4: "colorchannelmixer=.393:.769:.189:0:.349:.686:.168:0:.272:.534:.131",
-                5: "rgbashift=rh=-4:bh=4", 6: "eq=saturation=1.5:gamma=1.2:contrast=1.2", 7: "negate", 8: "hue=h=90"
-            }.get(idx, "")
-            
-            target = self.target_mon_cb.currentData()
-            
-            if fx == "":
-                self._send_ipc("vf", "", target)
-                self._send_ipc("hwdec", "auto", target)
-            else:
-                self._send_ipc("hwdec", "auto-copy", target)
-                self._send_ipc("vf", fx, target)
-        
-        self.shader_cb.currentIndexChanged.connect(_on_shader_change)
-        ctrl.addWidget(self.shader_cb)
-        
-        # Target Display
-        self.target_mon_cb = QComboBox()
-        self.target_mon_cb.setFixedHeight(26)
-        self.target_mon_cb.setStyleSheet(c_style)
-        self.target_mon_cb.addItem("ALL DISPLAYS", "")
-        try:
-            out = subprocess.check_output("xrandr --query", shell=True, text=True)
-            for line in out.split('\n'):
-                m = re.match(r'^(\S+) connected', line)
-                if m: self.target_mon_cb.addItem(m.group(1), m.group(1))
-        except: pass
-        ctrl.addWidget(self.target_mon_cb)
-        
-        ctrl.addSpacing(16)
-        
-        # Volume Controls
-        self.vol_btn = QPushButton("🔊")
-        self.vol_btn.setFixedSize(32, 32)
-        self.vol_btn.setFocusPolicy(NoFocus)
-        self.vol_btn.setCursor(QCursor(HC))
-        self.vol_btn.setStyleSheet("background:transparent; color:#888888; border:none; font-size:16px;")
-        
-        self.vol_slider = QSlider(Qt.Orientation.Horizontal if hasattr(Qt, 'Orientation') else Qt.Horizontal)
-        self.vol_slider.setFixedSize(80, 20)
-        self.vol_slider.setFocusPolicy(NoFocus)
-        self.vol_slider.setRange(0, 100)
-        self.vol_slider.setValue(int(conf_get("VOLUME", "0")))
-        
-        def _on_vol_mute():
-            if self.vol_slider.value() > 0:
-                self._last_vol = self.vol_slider.value()
-                self.vol_slider.setValue(0)
-            else:
-                self.vol_slider.setValue(getattr(self, "_last_vol", 50))
-                
-        def _on_vol_change(v):
-            self.vol_btn.setText("🔇" if v == 0 else "🔊")
-            conf_set("VOLUME", str(v))
-            self._send_ipc("volume", v)
-            
-        self.vol_btn.clicked.connect(_on_vol_mute)
-        self.vol_slider.valueChanged.connect(_on_vol_change)
-        
-        ctrl.addWidget(self.vol_btn)
-        ctrl.addWidget(self.vol_slider)
 
-        root_lay.addWidget(ctrl_frame)
+        dock_c_lay.addStretch()
+        dock_c_lay.addWidget(ctrl_frame)
+        dock_c_lay.setStretchFactor(ctrl_frame, 1)
+        dock_c_lay.addStretch()
+
+        right_lay.addWidget(dock_container)
+        root_lay.addWidget(right_widget)
 
     def switch_view(self, index):
         self.stack.setCurrentIndex(index)
@@ -1714,42 +2007,33 @@ except Exception:
         if not int(conf_get("THEME", "0")):
             return
             
+        import colorsys
+        h, l, s = colorsys.rgb_to_hls(r/255, g/255, b/255)
+        if l < 0.7: l = 0.7
+        if s < 0.6: s = 0.6
+        r_n, g_n, b_n = colorsys.hls_to_rgb(h, l, s)
+        r_bright, g_bright, b_bright = int(r_n*255), int(g_n*255), int(b_n*255)
+            
         global ACCENT
-        acc = '#{:02x}{:02x}{:02x}'.format(r, g, b)
+        acc = '#{:02x}{:02x}{:02x}'.format(r_bright, g_bright, b_bright)
         ACCENT = acc
         
         dynamic_bg = conf_get("DYNAMIC_BG", "1") == "1"
-
         if dynamic_bg:
-            # Tint backgrounds with a very dark shade of the accent color
             bg_main    = f"rgba({int(r*.07)},{int(g*.07)},{int(b*.07)},225)"
             bg_sidebar = f"rgba({int(r*.04)},{int(g*.04)},{int(b*.04)},215)"
             bg_ctrl    = f"rgba({int(r*.05)},{int(g*.05)},{int(b*.05)},215)"
         else:
-            # Neutral dark rgba — no tinting, saves GPU color calc
             bg_main    = "rgba(13,13,13,220)"
             bg_sidebar = "rgba(8,8,8,210)"
             bg_ctrl    = "rgba(8,8,8,210)"
 
-        # Patch only the containers that need color — never the whole widget tree
-        qss_patch = f"""
-#MainContainer {{ background-color: {bg_main}; }}
-#Sidebar {{ background-color: {bg_sidebar}; border-right: 1px solid rgba(255,255,255,8); }}
-#ControlBar {{ background-color: {bg_ctrl}; }}
-QPushButton[objectName="NavBtn"]:checked {{ color: {acc}; border-left: 2px solid {acc}; }}
-QPushButton[objectName="TabBtn"]:checked {{ color: {acc}; border-bottom: 1px solid {acc}; }}
-QPushButton[objectName="ApplyBtn"] {{
-    background-color: transparent; color: {acc};
-    border: 1px solid {acc};
-    border-radius: 4px;
-    font-family: 'JetBrains Mono', 'Fira Mono', monospace;
-    font-size: 11px; font-weight: bold; padding: 5px 12px; letter-spacing: 1px;
-}}
-QPushButton[objectName="ApplyBtn"]:hover {{ background-color: {acc}; color: #0d0d0d; }}
-QPushButton[objectName="PlayBtn"]:hover {{ border-color: {acc}; color: {acc}; }}
-#Card:hover {{ border-color: {acc}; }}
-"""
-        self.setStyleSheet(STYLESHEET + qss_patch)
+        current_theme_name = conf_get("APP_THEME", "Vellum (Default)")
+        # Rebuild the ENTIRE stylesheet cleanly with the dynamic overrides
+        full_css = build_theme_stylesheet(current_theme_name, dynamic_acc=acc, dyn_bg=bg_main, dyn_sb=bg_sidebar, dyn_ctrl=bg_ctrl)
+        
+        # Apply the clean stylesheet
+        self.setStyleSheet(full_css)
 
         if hasattr(self, "color_btn"):
             self.color_btn.setStyleSheet(f"background-color: {acc}; border-radius: 4px; border: 1px solid #1a1a1a;")
