@@ -1418,11 +1418,11 @@ class SettingsPanel(QWidget):
         h.setContentsMargins(16, 0, 16, 0)
 
         texts = QVBoxLayout()
-        lbl = QLabel("THEME KITTY")
+        lbl = QLabel("THEME TERMINALS")
         lbl.setStyleSheet(
             "color:#e4e1e9; font-family:'JetBrains Mono','Fira Mono',monospace;"
             "font-size:12px; font-weight:bold; letter-spacing:1px;")
-        desc_lbl = QLabel("Propagate colors and image to Kitty terminal")
+        desc_lbl = QLabel("Propagate accent colors to Kitty and Ghostty")
         desc_lbl.setStyleSheet(
             "color:#a0a0a0; font-family:'JetBrains Mono','Fira Mono',monospace; font-size:10px;")
         texts.addWidget(lbl)
@@ -1432,15 +1432,15 @@ class SettingsPanel(QWidget):
 
         sw = ToggleSwitch()
         targets = conf_get("THEME_TARGETS", "ghostzk bspwm polybar rofi dunst kitty ghostty mpv")
-        sw._on = "kitty" in targets
+        sw._on = "kitty" in targets or "ghostty" in targets
         sw.update()
 
         def _toggle(val):
             targets_raw = conf_get("THEME_TARGETS", "ghostzk bspwm polybar rofi dunst kitty ghostty mpv")
             targets_clean = targets_raw.replace('"', '').replace("'", "")
-            parts = [p for p in targets_clean.split() if p != "kitty"]
+            parts = [p for p in targets_clean.split() if p not in ("kitty", "ghostty")]
             if val:
-                parts.append("kitty")
+                parts.extend(["kitty", "ghostty"])
             conf_set("THEME_TARGETS", f'"{ " ".join(parts) }"')
 
         sw.toggled.connect(_toggle)
