@@ -1,11 +1,11 @@
 # Aura Studio v1.0 🌌
-A lightweight, open-source Animated Wallpaper Engine for X11 Window Managers (BSPWM, i3, Awesome, etc.) with Live Shaders, Multi-Monitor support, and Auto-Theming capabilities.
+A lightweight, open-source Animated WelsPaper Engine for X11 Window Managers (BSPWM, i3, Awesome, etc.) with Live Shaders, Multi-Monitor support, and Auto-Theming capabilities.
 
 
 ## ✨ Features
 * **Online Catalog:** Integrated search and download for MotionBgs and MoeWalls.
 * **Live Visual Filters:** Apply real-time shaders (Blur, Cyberpunk, Sepia, Invert, etc.) seamlessly using dynamic MPV hardware decoding transitions.
-* **Multi-Monitor Native:** Assign specific wallpapers and filters to different screens.
+* **Multi-Monitor Native:** Assign specific WelsPapers and filters to different screens.
 * **System Integration:** Extracts dominant colors from your video to dynamically theme your window borders (BSPWM), Polybar, Rofi, Kitty, and Ghostty. (Fully compatible out-of-the-box with gh0stzk dotfiles).
 * **Smart Pausing:** Automatically pauses playback when a fullscreen app or game is running to save resources.
 * **System Tray:** Ghost mode and quick-controls from your system tray.
@@ -28,9 +28,9 @@ cd Aura-Studio
 3. Copy the scripts in `bin/` to `~/.local/bin/` and make them executable.
 
 ## 🎨 Auto-Theming Setup
-If you are NOT using the gh0stzk dotfiles structure, you can disable the Auto-Theming module to use Aura purely as a Wallpaper Engine:
+If you are NOT using the gh0stzk dotfiles structure, you can disable the Auto-Theming module to use Aura purely as a WelsPaper Engine:
 1. Open `~/.config/aura/aura.conf`
 2. Change `THEME=1` to `THEME=0`.
 
 ## 🤝 Contributing
-Feedback, bug reports, and pull requests are highly appreciated! Let's build the best open-source wallpaper engine for Linux.
+Feedback, bug reports, and pull requests are highly appreciated! Let's build the best open-source WelsPaper engine for Linux.
